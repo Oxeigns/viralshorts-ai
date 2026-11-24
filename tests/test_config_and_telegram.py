@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
@@ -19,7 +20,8 @@ TEST_SECRET = "test_config_center_key"
 
 def test_app_json_has_no_live_secrets():
     raw = Path("app.json").read_text(encoding="utf-8")
-    assert "sk_d543" not in raw
+    assert not re.search(r"sk_[a-f0-9]{40,}", raw)
+    assert not re.search(r"GOCSPX-[A-Za-z0-9_-]{10,}", raw)
     data = json.loads(raw)
     assert data["env"]["ELEVENLABS_API_KEY"].get("value") in {None, ""}
     assert "HACKERAI_API_KEY" in data["env"]
