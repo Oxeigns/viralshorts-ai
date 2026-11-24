@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Video manager</h1>
+  <div class="filters">
+    {% for s in ['all','processing','generated','scheduled','published','failed'] %}
+    <a href="/videos{% if s != 'all' %}?status={{ s }}{% endif %}">{{ s }}</a>
+    {% endfor %}
+  </div>
+</header>
+<table>
+  <tr><th>ID</th><th>Title</th><th>Status</th><th>Quality</th><th>Notes</th><th>File</th></tr>
+  {% for v in videos %}
+  <tr>
+    <td>{{ v.id }}</td>
+    <td>{{ v.title }}</td>
+    <td><span class="pill {{ v.status }}">{{ v.status }}</span></td>
+    <td>{{ v.quality_score }}</td>
+    <td>{{ v.quality_notes or v.fail_reason }}</td>
+    <td>{% if v.file_path %}<a href="/media/{{ v.id }}">mp4</a>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6">Nothing in this state yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Overview</h1>
+  <form method="post" action="/api/generate"><button>Generate one Short now</button></form>
+</header>
+<section class="grid">
+  <article><small>Generated</small><strong>{{ totals.generated }}</strong></article>
+  <article><small>Published</small><strong>{{ totals.published }}</strong></article>
+  <article><small>Views</small><strong>{{ totals.views }}</strong></article>
+  <article><small>Subscribers</small><strong>{{ totals.subscribers }}</strong></article>
+  <article><small>Failed videos</small><strong>{{ totals.failed }}</strong></article>
+  <article><small>Failed jobs</small><strong>{{ totals.jobs_failed }}</strong></article>
+</section>
+<p class="hint">Automation is {% if settings.paused %}<b>paused</b>{% else %}<b>running</b>{% endif %} · {{ settings.daily_target }} / day · {{ settings.timezone }} · {{ settings.slots }}</p>
+<h2>Recent videos</h2>
+<table>
+  <tr><th>Title</th><th>Status</th><th>Quality</th><th>Duration</th></tr>
+  {% for v in recent %}
+  <tr>
+    <td>{{ v.title }}</td>
+    <td><span class="pill {{ v.status }}">{{ v.status }}</span></td>
+    <td>{{ v.quality_score }}</td>
+    <td>{{ '%.0f'|format(v.duration_sec) }}s</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4">No videos yet. Generate one to populate real data.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

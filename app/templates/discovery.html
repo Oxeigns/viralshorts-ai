@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Discovery</h1>
+  <form method="post" action="/api/discover"><button>Scan public feeds</button></form>
+</header>
+<p class="hint">Active categories: {{ categories|join(', ') }}</p>
+<h2>Ideas</h2>
+<table>
+  <tr><th>Title</th><th>Category</th><th>Source</th><th>Score</th><th>License potential</th></tr>
+  {% for i in ideas %}
+  <tr>
+    <td>{{ i.title }}</td>
+    <td>{{ i.category }}</td>
+    <td>{{ i.source }}</td>
+    <td>{{ i.relevance_score }}</td>
+    <td>{{ i.license_availability }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">No ideas stored yet. Scan feeds or generate a video.</td></tr>
+  {% endfor %}
+</table>
+<h2>Licensed / recorded media</h2>
+<table>
+  <tr><th>Source</th><th>Creator</th><th>License</th><th>Commercial</th><th>Status</th></tr>
+  {% for a in assets %}
+  <tr>
+    <td>{{ a.source }}</td>
+    <td>{{ a.creator }}</td>
+    <td>{{ a.license_name }}</td>
+    <td>{{ a.commercial_use }}</td>
+    <td>{{ a.rights_status }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">No remote media downloaded. Original generated graphics are used until Pexels/Pixabay keys are set.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

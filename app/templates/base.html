@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VIRALSHORTS AI</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <aside>
+    <div class="brand">VIRALSHORTS<span>AI</span></div>
+    <nav>
+      <a href="/">Overview</a>
+      <a href="/videos">Videos</a>
+      <a href="/discovery">Discovery</a>
+      <a href="/automation">Automation</a>
+      <a href="/integrations">Integrations</a>
+      <a href="/analytics">Analytics</a>
+    </nav>
+    {% if user %}
+    <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+    {% endif %}
+  </aside>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

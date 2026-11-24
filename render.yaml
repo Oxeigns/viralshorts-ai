@@ -1,0 +1,84 @@
+services:
+  - type: web
+    name: viralshorts-web
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: APP_BASE_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralshorts-db
+          property: connectionString
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: DAILY_PUBLISH_TARGET
+        value: "3"
+      - key: PUBLISH_SLOTS
+        value: "09:00,14:00,20:00"
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: RENDER_ROOT
+        value: /var/data/renders
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: PIXABAY_API_KEY
+        sync: false
+    disk:
+      name: viralshorts-data
+      mountPath: /var/data
+      sizeGB: 10
+
+  - type: worker
+    name: viralshorts-worker
+    runtime: docker
+    plan: starter
+    dockerCommand: python -m app.worker
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralshorts-db
+          property: connectionString
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: RENDER_ROOT
+        value: /var/data/renders
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+    disk:
+      name: viralshorts-worker-data
+      mountPath: /var/data
+      sizeGB: 10
+
+databases:
+  - name: viralshorts-db
+    plan: basic-256mb
+    databaseName: viralshorts
+    user: viralshorts

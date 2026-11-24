@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<header><h1>Integrations</h1></header>
+<section class="grid">
+  <article>
+    <small>YouTube</small>
+    <strong>{% if providers.youtube %}Connected{% elif youtube_ready %}Ready to connect{% else %}Not configured{% endif %}</strong>
+    <p>{% if channel %}{{ channel.title }} ({{ channel.youtube_channel_id }}){% else %}Connect with official Google OAuth. Never enter a Google password here.{% endif %}</p>
+    {% if youtube_ready %}
+    <a class="button" href="/api/integrations/youtube/start">Connect YouTube</a>
+    {% else %}
+    <p class="hint">Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and the authorized redirect URI.</p>
+    {% endif %}
+  </article>
+  <article>
+    <small>Media providers</small>
+    <p>Pexels: {{ 'configured' if providers.pexels else 'optional / unused' }}</p>
+    <p>Pixabay: {{ 'configured' if providers.pixabay else 'optional / unused' }}</p>
+  </article>
+  <article>
+    <small>AI engine</small>
+    <p>Local script writer: always on</p>
+    <p>Ollama: {{ 'configured' if providers.ollama else 'optional / unused' }}</p>
+    <p>OpenAI-compatible: {{ 'configured' if providers.openai else 'optional / unused' }}</p>
+  </article>
+  <article>
+    <small>Notifications / storage</small>
+    <p>Telegram: {{ 'configured' if providers.telegram else 'optional / unused' }}</p>
+    <p>Object storage: set OBJECT_STORAGE_URL for production. Render disks are ephemeral.</p>
+  </article>
+</section>
+{% endblock %}
