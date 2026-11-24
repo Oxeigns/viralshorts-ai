@@ -178,9 +178,19 @@ async def _check_publishing(session: AsyncSession) -> dict:
     slots = [await get_setting(session, f"publish_time_{i}") for i in (1, 2, 3)]
     checks = []
     ready = True
-    if not daily.isdigit() or not (1 <= int(daily) <= 6):
-        checks.append(_fail("daily_target", "Daily upload limit must be 1–6."))
-        ready = False
+    if not daily.isdigit() or not (1 <= int(daily) <= 48):
+        checks.append(_fail("daily_target", "Daily upload limit must be 1–48."))
+    elif int(daily) > 6:
+        # A deliberate high target is a configuration choice, not a broken setup. It
+        # stays a warning so readiness does not fail, but the quota reality is stated.
+        checks.append(
+            _warn(
+                "daily_target",
+                f"{daily} uploads/day requested. Default YouTube quota allows about 6 "
+                "uploads/day (10,000 units, ~1,600 per upload); extra slots will be "
+                "blocked with a quota message until the quota is raised.",
+            )
+        )
     else:
         checks.append(_ok("daily_target", f"{daily} Shorts / day"))
     if not tz:

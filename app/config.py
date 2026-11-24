@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/viralshorts.db"
     redis_url: str = "redis://localhost:6379/0"
     timezone: str = "Asia/Kolkata"
-    daily_publish_target: int = 3
+    daily_publish_target: int = 24
     publish_slots: str = "09:00,14:00,20:00"
     publish_time_1: str = "09:00"
     publish_time_2: str = "14:00"
@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     default_language: str = "en"
     automation_paused: bool = False
     youtube_category_id: str = "24"
-    publishing_mode: str = "approval"
-    approval_required: bool = True
+    publishing_mode: str = "automatic"
+    approval_required: bool = False
     worker_enabled: bool = True
     scheduler_enabled: bool = True
     log_level: str = "INFO"

@@ -44,7 +44,16 @@ app.json                  Config schema (NOT a Render Blueprint)
 render.yaml               Render Blueprint
 ```
 
-Default publish times: **09:00, 14:00, 20:00 IST**. Daily target is 3. Modes: `automatic`, `approval` (default), `manual`.
+Default daily target is **24** and the default mode is `automatic` — no approval step.
+Slots derive from the target: 3 or fewer keeps the configured times (09:00, 14:00,
+20:00 IST); a higher target divides the day evenly, so 24 means one Short every hour
+and 12 means every two hours. A day never accepts more than its target, so extra
+videos roll into tomorrow. Modes: `automatic`, `approval`, `manual`.
+
+**Quota reality:** YouTube's default quota is 10,000 units/day and one upload costs
+about 1,600, so roughly 6 uploads succeed per day until the quota is raised. Slots
+beyond that are marked `blocked` with a quota message and automation keeps running;
+the Pre-Deploy checker warns when the target exceeds 6.
 
 ## App Configuration Center
 

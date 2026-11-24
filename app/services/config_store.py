@@ -110,7 +110,7 @@ async def apply_runtime_settings(session: AsyncSession) -> None:
     settings = await get_or_create_settings(session)
     daily = await get_setting(session, "daily_target")
     if daily.isdigit():
-        settings.daily_target = max(1, min(int(daily), 6))
+        settings.daily_target = max(1, min(int(daily), 48))
     settings.timezone = (await get_setting(session, "timezone")) or settings.timezone
     t1 = await get_setting(session, "publish_time_1")
     t2 = await get_setting(session, "publish_time_2")

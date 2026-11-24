@@ -29,7 +29,7 @@ from app.services.config_store import get_setting, put_setting
 from app.services.jobs import enqueue_generation, failed_jobs
 from app.services.predeploy import run_predeploy
 from app.services.publisher import tick
-from app.services.scheduler import get_or_create_settings, next_open_slot
+from app.services.scheduler import as_utc, get_or_create_settings, next_open_slot
 from app.services.secrets import TELEGRAM_TOKEN, get_secret
 from app.services.youtube import youtube_ready
 
@@ -292,7 +292,7 @@ async def approve_one(session: AsyncSession, video_id: int) -> str:
     video.status = "generated"
     await session.commit()
     await session.refresh(queue)
-    when = await _slot_label(session, queue.scheduled_for)
+    when = await _slot_label(session, as_utc(queue.scheduled_for))
     return f"Approved <b>#{video.id}</b> — {_short(video.title, 50)}\nQueued for {when}."
 
 
@@ -372,7 +372,8 @@ async def queue_text(session: AsyncSession) -> str:
         return "<b>Queue</b>\nEmpty. Generate a video first."
     lines = ["<b>Queue</b>"]
     for item in rows:
-        lines.append(f"#{item.video_id} {item.status} @ {item.scheduled_for:%d %b %H:%M} · tries {item.attempts}")
+        stamp = as_utc(item.scheduled_for)
+        lines.append(f"#{item.video_id} {item.status} @ {stamp:%d %b %H:%M} UTC · tries {item.attempts}")
     return "\n".join(lines)
 
 

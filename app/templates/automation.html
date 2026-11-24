@@ -2,7 +2,8 @@
 {% block content %}
 <header><h1>Automation</h1></header>
 <form class="card wide" method="post" action="/automation">
-  <label>Daily target <input type="number" name="daily_target" min="1" max="6" value="{{ settings.daily_target }}"></label>
+  <label>Daily target <input type="number" name="daily_target" min="1" max="48" value="{{ settings.daily_target }}"></label>
+  <p class="hint">Above 3 the day is divided into even slots — 24 means one Short every hour. YouTube's default quota still caps successful uploads at about 6/day.</p>
   <label>Timezone <input name="timezone" value="{{ settings.timezone }}"></label>
   <label>Slots (HH:MM, comma-separated) <input name="slots" value="{{ settings.slots }}"></label>
   <label>Language <input name="language" value="{{ settings.language }}"></label>
@@ -13,13 +14,13 @@
 <h2>Publish queue</h2>
 <table>
   <tr><th>Video</th><th>When (UTC)</th><th>Status</th><th>Attempts</th><th>Last error</th></tr>
-  {% for q in queue %}
+  {% for item, when in queue %}
   <tr>
-    <td>{{ q.video_id }}</td>
-    <td>{{ q.scheduled_for }}</td>
-    <td>{{ q.status }}</td>
-    <td>{{ q.attempts }}</td>
-    <td>{{ q.last_error }}</td>
+    <td>{{ item.video_id }}</td>
+    <td>{{ when.strftime('%d %b %H:%M') if when else '-' }}</td>
+    <td>{{ item.status }}</td>
+    <td>{{ item.attempts }}</td>
+    <td>{{ item.last_error }}</td>
   </tr>
   {% else %}
   <tr><td colspan="5">Queue empty. Generate a video to schedule the next IST slot.</td></tr>

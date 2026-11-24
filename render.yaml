@@ -29,7 +29,7 @@ services:
       - key: TIMEZONE
         value: Asia/Kolkata
       - key: DAILY_PUBLISH_TARGET
-        value: "3"
+        value: "24"
       - key: PUBLISH_SLOTS
         value: "09:00,14:00,20:00"
       - key: PUBLISH_TIME_1
@@ -39,9 +39,9 @@ services:
       - key: PUBLISH_TIME_3
         value: "20:00"
       - key: PUBLISHING_MODE
-        value: approval
+        value: automatic
       - key: APPROVAL_REQUIRED
-        value: "true"
+        value: "false"
       - key: DEFAULT_LANGUAGE
         value: en
       - key: YOUTUBE_CATEGORY_ID

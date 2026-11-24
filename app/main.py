@@ -35,7 +35,7 @@ from app.services.discovery import active_categories, discover_ideas
 from app.services.jobs import enqueue_generation, failed_jobs, job_view, latest_jobs, reap_stale
 from app.services.predeploy import run_predeploy
 from app.services.publisher import tick
-from app.services.scheduler import get_or_create_settings
+from app.services.scheduler import as_utc, get_or_create_settings
 from app.services.telegram_control import auto_approve_enabled
 from app.services.secrets import (
     ELEVENLABS,
@@ -287,6 +287,7 @@ async def automation_page(request: Request, session: SessionDep):
     if not _current_user(request):
         return RedirectResponse("/login", status_code=303)
     queue = (await session.scalars(select(PublishQueue).order_by(PublishQueue.scheduled_for.asc()).limit(20))).all()
+    queue = [(item, as_utc(item.scheduled_for)) for item in queue]
     return templates.TemplateResponse(request, "automation.html", await _ctx(request, session, queue=queue))
 
 
