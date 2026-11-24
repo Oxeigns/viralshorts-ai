@@ -24,6 +24,30 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
 
 
+class ReconnectRequired(RuntimeError):
+    """Google rejected the stored refresh token (expired, revoked, or password change)."""
+
+
+RECONNECT_STATUSES = (400, 401)
+RECONNECT_MARKERS = (
+    "invalid_grant",
+    "token has been expired or revoked",
+    "invalid_rapt",
+)
+
+
+def is_reconnect_error(status_code: int, body: str) -> bool:
+    """True when a token endpoint reply means the user must authorize again.
+
+    Google returns 400 invalid_grant for an expired or revoked refresh token. A
+    Testing-status OAuth app issues refresh tokens that expire after seven days.
+    """
+    if status_code not in RECONNECT_STATUSES:
+        return False
+    text = (body or "").lower()
+    return any(marker in text for marker in RECONNECT_MARKERS)
+
+
 def youtube_configured() -> bool:
     settings = get_settings()
     return bool(settings.google_client_id and settings.google_client_secret)
@@ -134,6 +158,8 @@ async def refresh_access_token(refresh_token: str, session: AsyncSession | None 
                 "grant_type": "refresh_token",
             },
         )
+    if is_reconnect_error(resp.status_code, resp.text):
+        raise ReconnectRequired("Google rejected the stored refresh token")
     resp.raise_for_status()
     return resp.json()
 
@@ -198,7 +224,18 @@ async def upload_video(session: AsyncSession, video: GeneratedVideo) -> UploadHi
     refresh = decrypt_secret(cred.encrypted_refresh_token) if cred.encrypted_refresh_token else ""
     access = decrypt_secret(cred.encrypted_access_token) if cred.encrypted_access_token else ""
     if cred.token_expiry and cred.token_expiry < datetime.now(timezone.utc) and refresh:
-        fresh = await refresh_access_token(refresh, session)
+        try:
+            fresh = await refresh_access_token(refresh, session)
+        except ReconnectRequired:
+            channel = await session.scalar(select(Channel).where(Channel.id == cred.channel_id))
+            if channel is not None:
+                channel.connected = False
+            await session.commit()
+            await notify(
+                "YouTube authorization expired or was revoked. "
+                "Open Integrations and click Connect YouTube to restore publishing."
+            )
+            raise
         access = fresh.get("access_token", access)
         cred.encrypted_access_token = encrypt_secret(access)
         cred.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=int(fresh.get("expires_in") or 3500))

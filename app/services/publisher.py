@@ -9,7 +9,7 @@ from app.models import GeneratedVideo, Job, PublishQueue, utcnow
 from app.services.notify import notify
 from app.services.pipeline import run_generation
 from app.services.scheduler import get_or_create_settings
-from app.services.youtube import upload_video, youtube_ready
+from app.services.youtube import ReconnectRequired, upload_video, youtube_ready
 
 
 async def tick(session: AsyncSession) -> dict:
@@ -55,6 +55,15 @@ async def tick(session: AsyncSession) -> dict:
             item.status = "published"
             result["published"] += 1
             job.status = "done"
+        except ReconnectRequired:
+            item.status = "blocked"
+            item.last_error = "youtube reconnect required"
+            job.status = "failed"
+            job.detail = "reconnect required"
+            result["errors"].append("youtube reconnect required")
+            job.finished_at = utcnow()
+            await session.commit()
+            continue
         except Exception as exc:  # noqa: BLE001
             item.attempts += 1
             item.last_error = str(exc)
