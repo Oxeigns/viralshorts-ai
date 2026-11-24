@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -59,22 +61,51 @@ from app.services.youtube import (
     youtube_ready,
 )
 
+logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 scheduler = AsyncIOScheduler()
 SESSION_COOKIE = "vs_session"
 
 
+async def _init_db_with_retry(attempts: int = 10, delay: float = 3.0) -> None:
+    """A managed database can refuse connections for a few seconds after a restart.
+
+    Crashing the lifespan here would leave the service unreachable behind a 502, so
+    boot waits instead of failing immediately.
+    """
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await init_db()
+            return
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            logger.warning("database not ready (attempt %s/%s): %s", attempt, attempts, exc)
+            await asyncio.sleep(delay)
+    if last is not None:
+        raise last
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await init_db()
+    await _init_db_with_retry()
     async with SessionLocal() as session:
         await _ensure_admin(session)
         await get_or_create_settings(session)
         await bootstrap_env_secrets(session)
     cfg = get_settings()
     if cfg.scheduler_enabled and not scheduler.running:
-        scheduler.add_job(_scheduled_tick, "interval", minutes=10, id="pipeline-tick", replace_existing=True)
+        scheduler.add_job(
+            _scheduled_tick,
+            "interval",
+            minutes=10,
+            id="pipeline-tick",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
+        )
         scheduler.start()
     yield
     if scheduler.running:
@@ -428,7 +459,7 @@ async def save_elevenlabs(
 ):
     require_user(request)
     if api_key.strip():
-        probe = probe_account(api_key.strip())
+        probe = await asyncio.to_thread(probe_account, api_key.strip())
         if not probe.get("ok"):
             return RedirectResponse("/integrations?voice_error=1", status_code=303)
         await put_secret(session, ELEVENLABS, api_key.strip())
@@ -458,7 +489,8 @@ async def save_google(
 @app.get("/api/integrations/elevenlabs/voices")
 async def elevenlabs_voices(request: Request, session: SessionDep):
     require_user(request)
-    return {"voices": list_voices(await get_secret(session, ELEVENLABS))}
+    key = await get_secret(session, ELEVENLABS)
+    return {"voices": await asyncio.to_thread(list_voices, key)}
 
 
 @app.post("/api/voice/restyle")
@@ -471,7 +503,8 @@ async def voice_restyle(request: Request, session: SessionDep, video_id: int = F
     if not key:
         raise HTTPException(400, "ElevenLabs is not configured")
     dest = get_settings().render_root / f"voice-{video.id}.wav"
-    restyle_clip(Path(video.file_path), dest, api_key=key, voice_id=voice_id or None)
+    # restyle_clip shells out to ffmpeg; never block the event loop from a request.
+    await asyncio.to_thread(restyle_clip, Path(video.file_path), dest, key, voice_id or None)
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return {"ok": True, "path": str(dest)}

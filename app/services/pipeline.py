@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,7 +77,9 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
     try:
         voice_key = await get_secret(session, ELEVENLABS)
         voice_id = (await get_secret(session, ELEVENLABS_VOICE)) or None
-        rendered = render_short(
+        # render_short runs ffmpeg and eSpeak through subprocess; keep the event loop free.
+        rendered = await asyncio.to_thread(
+            render_short,
             video.id,
             draft.hook,
             draft.body,
@@ -83,7 +87,9 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
             api_key=voice_key or None,
             voice_id=voice_id,
         )
-        quality = evaluate(rendered["path"], rendered["duration"], True, draft.full_text, draft.hook)
+        quality = await asyncio.to_thread(
+            evaluate, rendered["path"], rendered["duration"], True, draft.full_text, draft.hook
+        )
         stored = await upload_file(session, rendered["path"])
         video.file_path = stored
         video.duration_sec = rendered["duration"]

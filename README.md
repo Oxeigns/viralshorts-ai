@@ -187,6 +187,7 @@ Do not claim deploy is complete until Render shows the web service as live and `
 | Queue never publishes | Connect YouTube; not paused; wait for IST slot or POST `/api/tick` |
 | OAuth error | Redirect URI must match exactly |
 | Render files vanish | Attach a disk or object storage |
+| 502 after login / random 502 | Container was OOM-killed or the event loop was blocked. `FFMPEG_THREADS=1` and `RENDER_MEMORY_BUDGET_MB` keep a 512 MB instance inside its limit; put rendering on the worker for production |
 | Actions CI red | GitHub account currently locks Actions on billing |
 | Pre-deploy not 100 | Required groups failed; read blockers, do not treat warnings as passes |
 

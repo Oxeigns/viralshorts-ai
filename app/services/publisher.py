@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import GeneratedVideo, Job, PublishQueue, utcnow
+from app.services.memory import over_budget, rss_mb
 from app.services.notify import notify
 from app.services.pipeline import run_generation
 from app.services.scheduler import get_or_create_settings
@@ -20,12 +21,21 @@ async def tick(session: AsyncSession) -> dict:
 
     ready = (await session.scalars(select(GeneratedVideo).where(GeneratedVideo.status == "generated"))).all()
     if len(ready) < settings.daily_target:
-        try:
-            await run_generation(session, settings.language)
-            result["generated"] += 1
-        except Exception as exc:  # noqa: BLE001
-            result["errors"].append(str(exc))
-            await notify(f"Scheduler generate failed: {exc}")
+        # Rendering needs hundreds of MB. Skip instead of letting the kernel kill the
+        # process, which the reverse proxy would surface as 502 to every visitor.
+        if over_budget():
+            result["errors"].append(f"generation skipped: rss {rss_mb()}MB over budget")
+            await notify(
+                f"Generation skipped: this instance is using {rss_mb():.0f} MB. "
+                "Run generation on the worker service or raise RENDER_MEMORY_BUDGET_MB."
+            )
+        else:
+            try:
+                await run_generation(session, settings.language)
+                result["generated"] += 1
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append(str(exc))
+                await notify(f"Scheduler generate failed: {exc}")
 
     due = (
         await session.scalars(

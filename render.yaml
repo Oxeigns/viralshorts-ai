@@ -52,6 +52,10 @@ services:
         value: "true"
       - key: LOG_LEVEL
         value: INFO
+      - key: FFMPEG_THREADS
+        value: "1"
+      - key: RENDER_MEMORY_BUDGET_MB
+        value: "420"
       - key: MEDIA_ROOT
         value: /var/data/media
       - key: RENDER_ROOT

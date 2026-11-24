@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,7 +40,7 @@ async def upload_file(session, local_path: str, key: str | None = None) -> str:
         aws_secret_access_key=secret,
     )
     extra = {"ContentType": "video/mp4"} if path.suffix.lower() == ".mp4" else {}
-    client.upload_file(str(path), bucket, object_key, ExtraArgs=extra)
+    await asyncio.to_thread(client.upload_file, str(path), bucket, object_key, ExtraArgs=extra)
     if endpoint:
         host = urlparse(endpoint).geturl().rstrip("/")
         return f"{host}/{bucket}/{object_key}"

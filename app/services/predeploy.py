@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import socket
@@ -102,7 +103,7 @@ async def _check_voice(session: AsyncSession) -> dict:
             "ready": True,
             "checks": [_warn("elevenlabs", "No ElevenLabs key. eSpeak NG fallback will narrate.")],
         }
-    probe = probe_account(key)
+    probe = await asyncio.to_thread(probe_account, key)
     if probe.get("ok"):
         return {
             "group": "voice",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import shutil
 import subprocess
@@ -135,34 +136,20 @@ def render_short(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg is not installed")
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat),
-        "-i",
-        str(audio),
-        "-vf",
-        f"scale={WIDTH}:{HEIGHT},fps={FPS},format=yuv420p,zoompan=z='min(zoom+0.0008,1.08)':d=1:s={WIDTH}x{HEIGHT}",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-c:a",
-        "aac",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        str(out),
-    ]
-    # zoompan + concat can be fragile; fall back to a simpler filter if needed.
+    # x264 allocates per-thread frame buffers. On a 512 MB instance the default
+    # thread count pushed the container past its limit and the kernel killed it,
+    # which the proxy reported as 502. One or two threads keeps the peak small.
+    try:
+        threads = max(1, int(os.environ.get("FFMPEG_THREADS", "1") or 1))
+    except ValueError:
+        threads = 1
     simple = [
         ffmpeg,
         "-y",
+        "-threads",
+        str(threads),
+        "-filter_threads",
+        str(threads),
         "-loop",
         "1",
         "-i",
@@ -174,7 +161,9 @@ def render_short(
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "ultrafast",
+        "-rc-lookahead",
+        "0",
         "-t",
         f"{min(45, max(8, duration)):.2f}",
         "-c:a",
