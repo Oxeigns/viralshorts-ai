@@ -89,8 +89,18 @@ def callback_uri(base_url: str | None = None) -> str:
 
 
 async def youtube_ready(session: AsyncSession) -> bool:
+    """True only when publishing can actually happen.
+
+    Client credentials alone are not enough: without a connected channel and a
+    stored refresh token every upload fails. Reporting ready in that state made the
+    dashboard claim YouTube was configured while nothing could publish.
+    """
     creds = await oauth_settings(session)
-    return bool(creds["client_id"] and creds["client_secret"])
+    if not (creds["client_id"] and creds["client_secret"]):
+        return False
+    channel = await session.scalar(select(Channel).limit(1))
+    cred = await session.scalar(select(OAuthCredential).limit(1))
+    return bool(channel and channel.connected and cred and cred.encrypted_refresh_token)
 
 
 async def oauth_settings(session: AsyncSession) -> dict[str, str]:

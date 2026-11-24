@@ -431,6 +431,7 @@ async def api_status(session: SessionDep):
         "generated": await session.scalar(select(func.count(GeneratedVideo.id))) or 0,
         "published": await session.scalar(select(func.count(UploadHistory.id))) or 0,
         "youtube_configured": await youtube_ready(session),
+        "database": "postgres" if "postgres" in get_settings().normalized_database_url() else "sqlite (data is lost on redeploy)",
         "elevenlabs_configured": eleven["configured"],
         "elevenlabs_hint": eleven["hint"],
         "hackerai_configured": (await secret_status(session, HACKERAI))["configured"],
