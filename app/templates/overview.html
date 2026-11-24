@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-<header>
-  <h1>Overview</h1>
-  <form method="post" action="/api/generate"><button>Generate one Short now</button></form>
+<header class="row-between">
+  <div>
+    <h1>Overview</h1>
+    <p class="hint">
+      Automation {% if settings.paused %}<b class="warn">paused</b>{% else %}<b class="ok">running</b>{% endif %}
+      · {{ settings.daily_target }}/day · {{ settings.timezone }} · {{ settings.slots|join(', ') }}
+      · auto-approve {% if auto_approve %}<b class="ok">on</b>{% else %}<b class="warn">off</b>{% endif %}
+    </p>
+  </div>
+  <button id="gen" onclick="startGeneration()">Generate a Short</button>
 </header>
+<div id="gen-status" class="banner" hidden></div>
+
 <section class="grid">
   <article><small>Generated</small><strong>{{ totals.generated }}</strong></article>
   <article><small>Published</small><strong>{{ totals.published }}</strong></article>
@@ -12,19 +21,94 @@
   <article><small>Failed videos</small><strong>{{ totals.failed }}</strong></article>
   <article><small>Failed jobs</small><strong>{{ totals.jobs_failed }}</strong></article>
 </section>
-<p class="hint">Automation is {% if settings.paused %}<b>paused</b>{% else %}<b>running</b>{% endif %} · {{ settings.daily_target }} / day · {{ settings.timezone }} · {{ settings.slots }}</p>
+
+<h2>Recent jobs</h2>
+<table>
+  <tr><th>Job</th><th>Status</th><th>Detail</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td>#{{ j.id }}</td>
+    <td><span class="pill {{ j.status }}">{{ j.status }}</span></td>
+    <td>{{ j.detail }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3">No jobs yet.</td></tr>
+  {% endfor %}
+</table>
+
 <h2>Recent videos</h2>
 <table>
-  <tr><th>Title</th><th>Status</th><th>Quality</th><th>Duration</th></tr>
+  <tr><th>Title</th><th>Status</th><th>Quality</th><th>Duration</th><th>Files</th></tr>
   {% for v in recent %}
   <tr>
     <td>{{ v.title }}</td>
     <td><span class="pill {{ v.status }}">{{ v.status }}</span></td>
     <td>{{ v.quality_score }}</td>
     <td>{{ '%.0f'|format(v.duration_sec) }}s</td>
+    <td>
+      {% if v.file_path %}<a href="/media/{{ v.id }}">mp4</a>{% endif %}
+      {% if v.file_path %}<a href="/media/{{ v.id }}/captions">srt</a>{% endif %}
+    </td>
   </tr>
   {% else %}
-  <tr><td colspan="4">No videos yet. Generate one to populate real data.</td></tr>
+  <tr><td colspan="5">No videos yet. Generate one to populate real data.</td></tr>
   {% endfor %}
 </table>
+
+<script>
+async function startGeneration() {
+  const button = document.getElementById('gen');
+  const box = document.getElementById('gen-status');
+  button.disabled = true;
+  box.hidden = false;
+  box.className = 'banner';
+  box.textContent = 'Queued…';
+  try {
+    const res = await fetch('/api/generate', { method: 'POST' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const job = await res.json();
+    box.textContent = 'Job #' + job.job_id + ' running. Rendering happens on the server.';
+    poll(job.job_id);
+  } catch (err) {
+    box.className = 'banner bad';
+    box.textContent = 'Could not start: ' + err.message;
+    button.disabled = false;
+  }
+}
+
+async function poll(jobId) {
+  const box = document.getElementById('gen-status');
+  const button = document.getElementById('gen');
+  for (let i = 0; i < 90; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    let job;
+    try {
+      const res = await fetch('/api/jobs/' + jobId);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      job = await res.json();
+    } catch (err) {
+      box.className = 'banner bad';
+      box.textContent = 'Lost track of job #' + jobId + ': ' + err.message;
+      button.disabled = false;
+      return;
+    }
+    box.textContent = 'Job #' + jobId + ' — ' + job.status + ' — ' + (job.detail || '');
+    if (job.status === 'done') {
+      box.className = 'banner good';
+      box.textContent = 'Job #' + jobId + ' finished. ' + (job.detail || '');
+      setTimeout(() => location.reload(), 1200);
+      return;
+    }
+    if (job.status === 'failed') {
+      box.className = 'banner bad';
+      box.textContent = 'Job #' + jobId + ' failed: ' + (job.detail || '');
+      button.disabled = false;
+      return;
+    }
+  }
+  box.className = 'banner bad';
+  box.textContent = 'Still running after 3 minutes. Open Errors for details.';
+  button.disabled = false;
+}
+</script>
 {% endblock %}

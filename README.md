@@ -124,7 +124,24 @@ Official docs: https://hackerai.sh/how-to-use-api
 - Base URL: `https://api.hackerai.sh/v1`
 - Auth: `Authorization: Bearer sk-…`
 - Recommended model: `auto`
-- Used for scripts, titles, descriptions, hashtags. Falls back to local templates if the key is missing or the call fails.
+- Used for scripts, titles, descriptions, **hashtags, captions and keywords**. Falls back to local templates if the key is missing or the reply is not usable.
+
+### Two different tokens, do not mix them
+
+| Token | What it is | Works for scripts? |
+|---|---|---|
+| `sk-…` | Inference API key, emailed after purchase | **Yes** |
+| `hsb_…` | Token for `npx @hackerai/local --token …`, the bridge that lets HackerAI drive a machine | **No** |
+
+`hsb_` is not an inference credential. Pointing `HACKERAI_API_KEY` at it does not produce
+scripts. The app now asks the model `2+2` during **Validate Configuration** and refuses
+keys whose reply is not an answer: a gateway that answers `200` with unrelated prose is
+reported as *not valid for inference* instead of silently filling videos with nonsense.
+Both `/v1/models` and unauthenticated requests can return `200`, so neither is used as proof.
+
+Every AI reply must be a JSON object with `hook`, `body`, `captions`, `titles`, `hashtags`,
+`keywords` and `description`. Anything else is discarded and the local writer takes over, so
+a bad provider can never write a one-line quote into your video.
 
 ## ElevenLabs (encrypted)
 

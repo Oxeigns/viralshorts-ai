@@ -13,7 +13,7 @@ GROUPS: list[dict[str, Any]] = [
     {
         "id": "ai",
         "title": "AI Configuration",
-        "help": "Hacker AI is an OpenAI-compatible chat API. Docs: https://hackerai.sh/how-to-use-api",
+        "help": "Hacker AI is an OpenAI-compatible chat API. The inference key starts with sk- and is emailed after purchase. An hsb_ token is the local bridge (npx @hackerai/local) and cannot write scripts. Docs: https://hackerai.sh/how-to-use-api",
         "fields": [
             {
                 "key": "hackerai_api_key",
@@ -22,7 +22,7 @@ GROUPS: list[dict[str, Any]] = [
                 "required": False,
                 "placeholder": "sk-your-key-here",
                 "env": "HACKERAI_API_KEY",
-                "obtain": "Buy or issue a key at https://hackerai.sh/pricing — it is emailed and starts with sk-.",
+                "obtain": "Get an sk- key at https://hackerai.sh/pricing (emailed). hsb_ tokens are for the local bridge, not inference. Validate asks 2+2 and rejects endpoints that answer with prose.",
             },
             {
                 "key": "hackerai_api_base_url",
@@ -296,6 +296,16 @@ GROUPS: list[dict[str, Any]] = [
                 "default": "true",
                 "env": "APPROVAL_REQUIRED",
                 "obtain": "true forces pending_approval even in automatic if you want a gate.",
+            },
+            {
+                "key": "auto_approve",
+                "label": "Auto-approve New Videos",
+                "secret": False,
+                "required": False,
+                "placeholder": "true",
+                "default": "true",
+                "env": "AUTO_APPROVE",
+                "obtain": "true queues every video that passes the quality gate into the next slot without asking. false keeps them in pending_approval.",
             },
         ],
     },

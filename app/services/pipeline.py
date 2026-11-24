@@ -1,28 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models import ContentIdea, GeneratedVideo, Job, PublishQueue, Script, utcnow
-from app.services.ai_providers import draft_script
+from app.models import ContentIdea, GeneratedVideo, PublishQueue, Script
+from app.services.ai_providers import draft_script, write_srt
 from app.services.discovery import discover_ideas, generated_asset_id, license_record
 from app.services.notify import notify
 from app.services.quality import evaluate
 from app.services.renderer import render_short
 from app.services.scheduler import get_or_create_settings, next_open_slot
+from app.services.config_store import get_setting
 from app.services.secrets import ELEVENLABS, ELEVENLABS_VOICE, HACKERAI, get_secret
 from app.services.storage import upload_file
+
+logger = logging.getLogger(__name__)
 
 
 async def run_generation(session: AsyncSession, language: str | None = None) -> GeneratedVideo:
     settings = get_settings()
     language = language or settings.default_language
-    job = Job(kind="generate", status="running", detail="pipeline start")
-    session.add(job)
-    await session.commit()
 
     ideas = await discover_ideas(session)
     idea = next((i for i in ideas if i.status in {"new", "ready"}), None)
@@ -32,7 +34,16 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
         raise RuntimeError("no content ideas available")
 
     hacker_key = await get_secret(session, HACKERAI)
-    draft = await draft_script(idea.title, idea.category, language, hackerai_key=hacker_key)
+    hacker_base = await get_setting(session, "hackerai_api_base_url")
+    hacker_model = await get_setting(session, "hackerai_model")
+    draft = await draft_script(
+        idea.title,
+        idea.category,
+        language,
+        hackerai_key=hacker_key,
+        hackerai_base=hacker_base,
+        hackerai_model=hacker_model,
+    )
     script = Script(
         idea_id=idea.id,
         language=language,
@@ -90,6 +101,11 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
         quality = await asyncio.to_thread(
             evaluate, rendered["path"], rendered["duration"], True, draft.full_text, draft.hook
         )
+        # Sidecar subtitles from the same caption lines that are burned on screen.
+        srt_path = await asyncio.to_thread(
+            write_srt, draft.captions, Path(rendered["path"]).with_suffix(".srt")
+        )
+        logger.info("captions written: %s", srt_path)
         stored = await upload_file(session, rendered["path"])
         video.file_path = stored
         video.duration_sec = rendered["duration"]
@@ -99,13 +115,17 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
         video.quality_notes = quality["notes"]
         video.voice_used = voice_id or settings.default_voice
         sched = await get_or_create_settings(session)
+        auto = (await get_setting(session, "auto_approve") or "").strip().lower()
+        auto_on = auto in {"true", "1", "yes", "on"} or (
+            auto not in {"false", "0", "no", "off"} and sched.publishing_mode == "automatic"
+        )
         if quality["passed"]:
-            if sched.publishing_mode != "automatic":
-                video.status = "pending_approval"
-            else:
+            if auto_on:
                 video.status = "generated"
                 slot = await next_open_slot(session)
                 session.add(PublishQueue(video_id=video.id, scheduled_for=slot, status="scheduled"))
+            else:
+                video.status = "pending_approval"
         else:
             video.status = "failed"
             video.fail_reason = quality["notes"]
@@ -116,9 +136,6 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
         await notify(f"Generation error: {exc}")
 
     idea.status = "used"
-    job.status = "done" if video.status != "failed" else "failed"
-    job.detail = video.fail_reason or video.status
-    job.finished_at = utcnow()
     await session.commit()
     await session.refresh(video)
     return video

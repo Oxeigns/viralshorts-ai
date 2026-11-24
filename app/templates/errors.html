@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Errors</h1>
+  <p class="hint">Every failed job and video with its real message. Nothing is hidden behind a generic failure.</p>
+</header>
+
+<h2>Failed jobs</h2>
+<table>
+  <tr><th>Job</th><th>Kind</th><th>When</th><th>Detail</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td>#{{ j.id }}</td>
+    <td>{{ j.kind }}</td>
+    <td>{{ j.created_at }}</td>
+    <td>{{ j.detail }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="ok">No failed jobs.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Failed videos</h2>
+<table>
+  <tr><th>Video</th><th>Title</th><th>Quality</th><th>Reason</th></tr>
+  {% for v in failed_videos %}
+  <tr>
+    <td>#{{ v.id }}</td>
+    <td>{{ v.title }}</td>
+    <td>{{ v.quality_score }}</td>
+    <td>{{ v.fail_reason }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="ok">No failed videos.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

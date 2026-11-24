@@ -68,25 +68,23 @@ async def _check_hackerai(session: AsyncSession) -> dict:
     model = (await get_setting(session, "hackerai_model")) or "auto"
     if not key:
         return {"group": "ai", "ready": False, "checks": [_fail("hackerai_key", "Hacker AI API key is not set.")]}
-    try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
-        if resp.status_code < 400:
-            await _set_provider_status(session, f"ok:{resp.status_code}")
-            return {
-                "group": "ai",
-                "ready": True,
-                "checks": [_ok("hackerai_api", f"GET {base}/models → {resp.status_code} (model={model})")],
-            }
-        await _set_provider_status(session, f"error:{resp.status_code}")
+    # /v1/models answers 200 with no credentials at all, so only a completion with a
+    # known answer can prove the key performs real inference.
+    from app.services.ai_providers import probe_hackerai
+
+    probe = await probe_hackerai(key, base, model)
+    if probe.get("ok"):
+        await _set_provider_status(session, "ok")
         return {
             "group": "ai",
-            "ready": False,
-            "checks": [_fail("hackerai_api", f"GET {base}/models → {resp.status_code} {resp.text[:160]}")],
+            "ready": True,
+            "checks": [_ok("hackerai_chat", f"inference verified · {probe.get('reason')} · model={model}")],
         }
-    except Exception as exc:  # noqa: BLE001
-        await _set_provider_status(session, "error")
-        return {"group": "ai", "ready": False, "checks": [_fail("hackerai_api", f"Hacker AI unreachable: {exc}")]}
+    await _set_provider_status(session, "error")
+    message = str(probe.get("reason") or "rejected")
+    if probe.get("sample"):
+        message = f"{message} · sample: {probe['sample'][:80]}"
+    return {"group": "ai", "ready": False, "checks": [_fail("hackerai_chat", message)]}
 
 
 async def _set_provider_status(session: AsyncSession, value: str) -> None:

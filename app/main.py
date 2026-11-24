@@ -30,12 +30,13 @@ from app.models import (
     User,
 )
 from app.security import hash_password, new_csrf, read_session, sign_session, verify_password
-from app.services.config_store import public_snapshot, save_form
+from app.services.config_store import get_setting, public_snapshot, save_form
 from app.services.discovery import active_categories, discover_ideas
-from app.services.pipeline import run_generation
+from app.services.jobs import enqueue_generation, failed_jobs, job_view, latest_jobs, reap_stale
 from app.services.predeploy import run_predeploy
 from app.services.publisher import tick
 from app.services.scheduler import get_or_create_settings
+from app.services.telegram_control import auto_approve_enabled
 from app.services.secrets import (
     ELEVENLABS,
     ELEVENLABS_VOICE,
@@ -49,6 +50,7 @@ from app.services.secrets import (
     put_secret,
     secret_status,
 )
+from app.services.telegram_control import diagnose as telegram_diagnose
 from app.services.telegram_control import handle_update, set_webhook
 from app.services.tts import list_voices, probe_account, restyle_clip
 from app.services.youtube import (
@@ -95,6 +97,15 @@ async def lifespan(_: FastAPI):
         await get_or_create_settings(session)
         await bootstrap_env_secrets(session)
     cfg = get_settings()
+    # Register the Telegram webhook at boot so the bot answers without a manual step.
+    try:
+        async with SessionLocal() as session:
+            base = normalize_base_url(await get_secret(session, PUBLIC_BASE_URL))
+            if base and "127.0.0.1" not in base and "localhost" not in base:
+                info = await set_webhook(session, base)
+                logger.info("telegram webhook registered: %s", info.get("ok"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram webhook setup skipped: %s", exc)
     if cfg.scheduler_enabled and not scheduler.running:
         scheduler.add_job(
             _scheduled_tick,
@@ -220,6 +231,7 @@ async def logout():
 async def overview(request: Request, session: SessionDep):
     if not _current_user(request):
         return RedirectResponse("/login", status_code=303)
+    await reap_stale(session)
     totals = {
         "generated": await session.scalar(select(func.count(GeneratedVideo.id))) or 0,
         "published": await session.scalar(select(func.count(GeneratedVideo.id)).where(GeneratedVideo.status == "published")) or 0,
@@ -229,7 +241,25 @@ async def overview(request: Request, session: SessionDep):
         "subscribers": await session.scalar(select(func.coalesce(func.max(AnalyticsSnapshot.subscribers), 0))) or 0,
     }
     recent = (await session.scalars(select(GeneratedVideo).order_by(GeneratedVideo.created_at.desc()).limit(8))).all()
-    return templates.TemplateResponse(request, "overview.html", await _ctx(request, session, totals=totals, recent=recent))
+    jobs = await latest_jobs(session, limit=6)
+    return templates.TemplateResponse(
+        request,
+        "overview.html",
+        await _ctx(request, session, totals=totals, recent=recent, jobs=jobs, auto_approve=await auto_approve_enabled(session)),
+    )
+
+
+@app.get("/errors", response_class=HTMLResponse)
+async def errors_page(request: Request, session: SessionDep):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    jobs = await failed_jobs(session, limit=40)
+    videos = (
+        await session.scalars(
+            select(GeneratedVideo).where(GeneratedVideo.status == "failed").order_by(GeneratedVideo.id.desc()).limit(30)
+        )
+    ).all()
+    return templates.TemplateResponse(request, "errors.html", await _ctx(request, session, jobs=jobs, failed_videos=videos))
 
 
 @app.get("/videos", response_class=HTMLResponse)
@@ -347,15 +377,40 @@ async def api_discover(request: Request, session: SessionDep):
 
 @app.post("/api/generate")
 async def api_generate(request: Request, session: SessionDep):
+    """Queue a render and return at once.
+
+    Rendering takes longer than a managed proxy keeps a request open, so doing the
+    work inline used to surface as 502. Poll /api/jobs/{id} instead.
+    """
     require_user(request)
-    video = await run_generation(session)
+    job = await enqueue_generation(session, source="dashboard")
+    return {"job_id": job.id, "status": job.status, "poll": f"/api/jobs/{job.id}"}
+
+
+@app.get("/api/jobs/{job_id}")
+async def api_job(job_id: int, request: Request, session: SessionDep):
+    require_user(request)
+    view = await job_view(session, job_id)
+    if view is None:
+        raise HTTPException(404, "job not found")
+    return view
+
+
+@app.get("/api/jobs")
+async def api_jobs(request: Request, session: SessionDep):
+    require_user(request)
+    await reap_stale(session)
+    rows = await latest_jobs(session, limit=15)
     return {
-        "id": video.id,
-        "status": video.status,
-        "title": video.title,
-        "quality": video.quality_score,
-        "path": video.file_path,
-        "fail_reason": video.fail_reason,
+        "jobs": [
+            {
+                "id": row.id,
+                "status": row.status,
+                "detail": row.detail,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
     }
 
 
@@ -423,8 +478,19 @@ async def telegram_webhook_setup(request: Request, session: SessionDep):
     require_user(request)
     base = normalize_base_url(await get_secret(session, PUBLIC_BASE_URL))
     if not base:
+        base = normalize_base_url((await get_setting(session, "app_base_url")) or get_settings().app_base_url)
+    if not base:
         raise HTTPException(400, "Set the public app URL first")
     return await set_webhook(session, base)
+
+
+@app.get("/api/telegram/diagnose")
+async def telegram_diagnose_api(request: Request, session: SessionDep):
+    require_user(request)
+    base = normalize_base_url(await get_secret(session, PUBLIC_BASE_URL))
+    if not base:
+        base = normalize_base_url((await get_setting(session, "app_base_url")) or get_settings().app_base_url)
+    return await telegram_diagnose(session, base)
 
 
 @app.get("/api/integrations/youtube/start")
@@ -532,3 +598,15 @@ async def media(video_id: int, request: Request, session: SessionDep):
     if not video or not video.file_path or not Path(video.file_path).exists():
         raise HTTPException(404, "video not found")
     return FileResponse(video.file_path, media_type="video/mp4")
+
+
+@app.get("/media/{video_id}/captions")
+async def media_captions(video_id: int, request: Request, session: SessionDep):
+    require_user(request)
+    video = await session.get(GeneratedVideo, video_id)
+    if not video or not video.file_path:
+        raise HTTPException(404, "video not found")
+    srt = Path(video.file_path).with_suffix(".srt")
+    if not srt.exists():
+        raise HTTPException(404, "captions not generated for this video")
+    return FileResponse(srt, media_type="application/x-subrip", filename=f"short-{video_id}.srt")
