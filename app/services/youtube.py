@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -29,17 +29,39 @@ def youtube_configured() -> bool:
     return bool(settings.google_client_id and settings.google_client_secret)
 
 
+CALLBACK_PATH = "/api/integrations/youtube/callback"
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+
+def normalize_base_url(value: str | None) -> str:
+    """Reduce a pasted base URL to scheme://host[:port] plus any real sub-path.
+
+    Accepts a bare host, a trailing slash, or a full callback URL pasted by mistake.
+    Repeated callback suffixes are stripped so the path can never be appended twice.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = "https://" + raw
+    parts = urlsplit(raw)
+    if not parts.netloc:
+        return ""
+    path = parts.path or ""
+    while path.endswith(CALLBACK_PATH):
+        path = path[: -len(CALLBACK_PATH)]
+    return f"{parts.scheme}://{parts.netloc}{path.rstrip('/')}"
+
+
 def callback_uri(base_url: str | None = None) -> str:
     settings = get_settings()
-    origin = (base_url or settings.app_base_url).rstrip("/")
-    configured = (settings.google_redirect_uri or "").strip()
-    if configured and not configured.endswith("/api/integrations/youtube/callback"):
-        return configured
-    if configured.startswith("http://127.0.0.1") and origin and "127.0.0.1" not in origin:
-        return f"{origin}/api/integrations/youtube/callback"
-    if configured:
-        return configured
-    return f"{origin}/api/integrations/youtube/callback"
+    origin = normalize_base_url(base_url or settings.app_base_url)
+    configured = normalize_base_url(settings.google_redirect_uri)
+    if configured and not any(host in configured for host in LOOPBACK_HOSTS):
+        return f"{configured}{CALLBACK_PATH}"
+    if origin:
+        return f"{origin}{CALLBACK_PATH}"
+    return f"http://127.0.0.1:8000{CALLBACK_PATH}"
 
 
 async def youtube_ready(session: AsyncSession) -> bool:

@@ -24,7 +24,7 @@ from app.services.secrets import (
     secret_status,
 )
 from app.services.scheduler import get_or_create_settings
-from app.services.youtube import callback_uri, youtube_ready
+from app.services.youtube import callback_uri, normalize_base_url, youtube_ready
 
 SECRET_KEYS = {
     "hackerai_api_key": HACKERAI,
@@ -72,8 +72,8 @@ def _settings_fallback(key: str) -> str:
         "storage_secret_key": cfg.storage_secret_key,
         "object_storage_bucket": cfg.object_storage_bucket,
         "app_env": cfg.app_env,
-        "frontend_url": cfg.frontend_url or cfg.app_base_url,
-        "app_base_url": cfg.app_base_url,
+        "frontend_url": normalize_base_url(cfg.frontend_url or cfg.app_base_url),
+        "app_base_url": normalize_base_url(cfg.app_base_url),
         "worker_enabled": "true" if cfg.worker_enabled else "false",
         "scheduler_enabled": "true" if cfg.scheduler_enabled else "false",
         "log_level": cfg.log_level,
@@ -137,13 +137,15 @@ async def save_form(session: AsyncSession, form: dict[str, str]) -> list[str]:
         value = (form.get(key) or "").strip()
         if item.get("secret") and not value:
             continue
+        if key in {"app_base_url", "frontend_url"} and value:
+            value = normalize_base_url(value)
         await put_setting(session, key, value)
         if key == "elevenlabs_voice_id" and value:
             await put_secret(session, ELEVENLABS_VOICE, value)
         if key == "google_client_id" and value:
             await put_secret(session, GOOGLE_CLIENT_ID, value)
         if key == "app_base_url" and value:
-            await put_secret(session, PUBLIC_BASE_URL, value.rstrip("/"))
+            await put_secret(session, PUBLIC_BASE_URL, value)
         saved.append(key)
     await apply_runtime_settings(session)
     return saved

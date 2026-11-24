@@ -53,6 +53,7 @@ from app.services.youtube import (
     authorization_url,
     callback_uri,
     exchange_code,
+    normalize_base_url,
     oauth_settings,
     store_tokens,
     youtube_ready,
@@ -389,8 +390,10 @@ async def telegram_webhook(request: Request, session: SessionDep):
 @app.post("/api/telegram/webhook/setup")
 async def telegram_webhook_setup(request: Request, session: SessionDep):
     require_user(request)
-    cfg = get_settings()
-    return await set_webhook(session, cfg.app_base_url)
+    base = normalize_base_url(await get_secret(session, PUBLIC_BASE_URL))
+    if not base:
+        raise HTTPException(400, "Set the public app URL first")
+    return await set_webhook(session, base)
 
 
 @app.get("/api/integrations/youtube/start")
@@ -448,7 +451,7 @@ async def save_google(
     if client_secret.strip():
         await put_secret(session, GOOGLE_CLIENT_SECRET, client_secret.strip())
     if public_base_url.strip():
-        await put_secret(session, PUBLIC_BASE_URL, public_base_url.strip().rstrip("/"))
+        await put_secret(session, PUBLIC_BASE_URL, normalize_base_url(public_base_url))
     return RedirectResponse("/integrations?google=saved", status_code=303)
 
 
