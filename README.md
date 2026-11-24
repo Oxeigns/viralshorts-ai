@@ -69,7 +69,7 @@ After login open **Config** (`/configuration`).
 
 `/predeploy` and `GET /api/predeploy` (login required) run live checks:
 
-- Hacker AI `GET {base}/models`
+- Hacker AI chat probe (the model must actually answer 2+2; `/v1/models` is unauthenticated and proves nothing)
 - ElevenLabs `/v1/user` (billing issues are warnings, not fake passes)
 - Telegram `getMe` + admin allowlist
 - Google OAuth + connected channel
