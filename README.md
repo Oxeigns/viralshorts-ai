@@ -68,6 +68,8 @@ pytest -q
 
 Tests compile the app, score scripts, compute IST slots, hit `/health`, and render a real MP4 with FFmpeg.
 
+A GitHub Actions workflow is in `docs/github-actions-ci.yml`. Copy it to `.github/workflows/ci.yml` after granting the `workflow` scope (this account's Actions are also currently billing-locked).
+
 ## Google OAuth / YouTube
 
 1. Create a Google Cloud project.
