@@ -73,9 +73,18 @@ Score weights: YouTube 25, Telegram 15, AI 15, Deploy 15, Voice/Publishing/Stora
 
 ## Telegram remote control
 
-Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_IDS` (comma-separated numeric user ids). After deploy, POST `/api/telegram/webhook/setup`.
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_IDS` (comma-separated numeric user ids). The webhook is registered at boot; `POST /api/telegram/webhook/setup` re-registers it manually.
 
-Menu / commands: Status, Config, Generate, Queue, Approve, Analytics, Pause, Resume, Pre-Deploy, Test. Unauthorized users are rejected. Keys are never echoed.
+Menu: **Status, Generate, Videos, Approve next, Queue, Analytics, Auto-approve, Errors, Pause, Resume, Pre-Deploy, Help**. Unauthorized users are rejected. Keys are never echoed.
+
+The **Videos** screen lists every video with paging and per-video buttons:
+
+- **✅ Approve #id** — queues that video for the next slot
+- **❌ Reject #id** — marks it rejected so it is never published
+- **▶️ Watch #id** — uploads the MP4 into the chat so you can judge it before deciding
+
+`GET /api/telegram/diagnose` reports why a silent bot is silent: missing token, unset
+or mismatched webhook, Telegram delivery errors, or an empty admin list.
 
 ## Local run
 

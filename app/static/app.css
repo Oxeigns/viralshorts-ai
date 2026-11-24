@@ -120,7 +120,7 @@ a { color: #7cb0ff; }
   color: var(--muted);
 }
 .pill.published, .pill.generated, .pill.done { color: var(--ok); border-color: #1f5f4a; }
-.pill.failed, .pill.blocked { color: var(--bad); border-color: #65323a; }
+.pill.failed, .pill.blocked, .pill.rejected { color: var(--bad); border-color: #65323a; }
 .pill.pending_approval, .pill.processing, .pill.running, .pill.queued { color: var(--warn); border-color: #61501f; }
 .auth { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
 strong.tiny { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
