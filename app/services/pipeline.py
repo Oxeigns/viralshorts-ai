@@ -13,6 +13,7 @@ from app.services.notify import notify
 from app.services.quality import evaluate
 from app.services.renderer import render_short
 from app.services.scheduler import next_open_slot
+from app.services.secrets import ELEVENLABS, ELEVENLABS_VOICE, get_secret
 
 
 async def run_generation(session: AsyncSession, language: str | None = None) -> GeneratedVideo:
@@ -71,7 +72,16 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
     await session.refresh(video)
 
     try:
-        rendered = render_short(video.id, draft.hook, draft.body, language=language)
+        voice_key = await get_secret(session, ELEVENLABS)
+        voice_id = (await get_secret(session, ELEVENLABS_VOICE)) or None
+        rendered = render_short(
+            video.id,
+            draft.hook,
+            draft.body,
+            language=language,
+            api_key=voice_key or None,
+            voice_id=voice_id,
+        )
         quality = evaluate(rendered["path"], rendered["duration"], True, draft.full_text, draft.hook)
         video.file_path = rendered["path"]
         video.duration_sec = rendered["duration"]

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -24,7 +22,6 @@ from app.models import (
     Job,
     MediaAsset,
     PublishQueue,
-    SchedulerSettings,
     UploadHistory,
     User,
 )
@@ -33,7 +30,26 @@ from app.services.discovery import active_categories, discover_ideas
 from app.services.pipeline import run_generation
 from app.services.publisher import tick
 from app.services.scheduler import get_or_create_settings
-from app.services.youtube import authorization_url, exchange_code, store_tokens, youtube_configured
+from app.services.secrets import (
+    ELEVENLABS,
+    ELEVENLABS_VOICE,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    PUBLIC_BASE_URL,
+    bootstrap_env_secrets,
+    get_secret,
+    put_secret,
+    secret_status,
+)
+from app.services.tts import list_voices, probe_account, restyle_clip
+from app.services.youtube import (
+    authorization_url,
+    callback_uri,
+    exchange_code,
+    oauth_settings,
+    store_tokens,
+    youtube_ready,
+)
 
 BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
@@ -47,6 +63,7 @@ async def lifespan(_: FastAPI):
     async with SessionLocal() as session:
         await _ensure_admin(session)
         await get_or_create_settings(session)
+        await bootstrap_env_secrets(session)
     if not scheduler.running:
         scheduler.add_job(_scheduled_tick, "interval", minutes=10, id="pipeline-tick", replace_existing=True)
         scheduler.start()
@@ -91,8 +108,13 @@ async def _ctx(request: Request, session: AsyncSession, **extra):
     settings = await get_or_create_settings(session)
     channel = await session.scalar(select(Channel).limit(1))
     cfg = get_settings()
+    eleven = await secret_status(session, ELEVENLABS)
+    google_id = await secret_status(session, GOOGLE_CLIENT_ID)
+    google_secret = await secret_status(session, GOOGLE_CLIENT_SECRET)
+    yt_ready = await youtube_ready(session)
     providers = {
-        "youtube": youtube_configured() and bool(channel and channel.connected),
+        "youtube": yt_ready and bool(channel and channel.connected),
+        "elevenlabs": eleven["configured"],
         "pexels": bool(cfg.pexels_api_key),
         "pixabay": bool(cfg.pixabay_api_key),
         "ollama": bool(cfg.ollama_base_url),
@@ -105,7 +127,12 @@ async def _ctx(request: Request, session: AsyncSession, **extra):
         "settings": settings,
         "channel": channel,
         "providers": providers,
-        "youtube_ready": youtube_configured(),
+        "youtube_ready": yt_ready,
+        "elevenlabs": eleven,
+        "google_id": google_id,
+        "google_secret": google_secret,
+        "redirect_uri": callback_uri(await get_secret(session, PUBLIC_BASE_URL)),
+        "voice_id": await get_secret(session, ELEVENLABS_VOICE),
         "categories": active_categories(),
     }
     data.update(extra)
@@ -258,23 +285,27 @@ async def api_tick(request: Request, session: SessionDep):
 @app.get("/api/status")
 async def api_status(session: SessionDep):
     settings = await get_or_create_settings(session)
+    eleven = await secret_status(session, ELEVENLABS)
     return {
         "paused": settings.paused,
         "daily_target": settings.daily_target,
         "timezone": settings.timezone,
         "generated": await session.scalar(select(func.count(GeneratedVideo.id))) or 0,
         "published": await session.scalar(select(func.count(UploadHistory.id))) or 0,
-        "youtube_configured": youtube_configured(),
+        "youtube_configured": await youtube_ready(session),
+        "elevenlabs_configured": eleven["configured"],
+        "elevenlabs_hint": eleven["hint"],
     }
 
 
 @app.get("/api/integrations/youtube/start")
-async def youtube_start(request: Request):
+async def youtube_start(request: Request, session: SessionDep):
     require_user(request)
-    if not youtube_configured():
-        raise HTTPException(400, "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first")
+    creds = await oauth_settings(session)
+    if not creds["client_id"] or not creds["client_secret"]:
+        raise HTTPException(400, "Save Google Client ID and Client Secret first")
     state = new_csrf()
-    response = RedirectResponse(authorization_url(state), status_code=303)
+    response = RedirectResponse(authorization_url(state, creds["client_id"], creds["redirect_uri"]), status_code=303)
     response.set_cookie("oauth_state", state, httponly=True, samesite="lax", max_age=600)
     return response
 
@@ -285,9 +316,68 @@ async def youtube_callback(request: Request, session: SessionDep, code: str | No
         raise HTTPException(400, error)
     if not code or not state or state != request.cookies.get("oauth_state"):
         raise HTTPException(400, "invalid OAuth state")
-    tokens = await exchange_code(code)
+    tokens = await exchange_code(code, session)
     await store_tokens(session, tokens)
     return RedirectResponse("/integrations", status_code=303)
+
+
+@app.post("/api/integrations/elevenlabs")
+async def save_elevenlabs(
+    request: Request,
+    session: SessionDep,
+    api_key: str = Form(""),
+    voice_id: str = Form(""),
+):
+    require_user(request)
+    if api_key.strip():
+        probe = probe_account(api_key.strip())
+        if not probe.get("ok"):
+            return RedirectResponse("/integrations?voice_error=1", status_code=303)
+        await put_secret(session, ELEVENLABS, api_key.strip())
+    if voice_id.strip():
+        await put_secret(session, ELEVENLABS_VOICE, voice_id.strip())
+    return RedirectResponse("/integrations?voice=saved", status_code=303)
+
+
+@app.post("/api/integrations/google")
+async def save_google(
+    request: Request,
+    session: SessionDep,
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+    public_base_url: str = Form(""),
+):
+    require_user(request)
+    if client_id.strip():
+        await put_secret(session, GOOGLE_CLIENT_ID, client_id.strip())
+    if client_secret.strip():
+        await put_secret(session, GOOGLE_CLIENT_SECRET, client_secret.strip())
+    if public_base_url.strip():
+        await put_secret(session, PUBLIC_BASE_URL, public_base_url.strip().rstrip("/"))
+    return RedirectResponse("/integrations?google=saved", status_code=303)
+
+
+@app.get("/api/integrations/elevenlabs/voices")
+async def elevenlabs_voices(request: Request, session: SessionDep):
+    require_user(request)
+    return {"voices": list_voices(await get_secret(session, ELEVENLABS))}
+
+
+@app.post("/api/voice/restyle")
+async def voice_restyle(request: Request, session: SessionDep, video_id: int = Form(...), voice_id: str = Form("")):
+    require_user(request)
+    video = await session.get(GeneratedVideo, video_id)
+    if not video or not video.file_path or not Path(video.file_path).exists():
+        raise HTTPException(404, "video not found")
+    key = await get_secret(session, ELEVENLABS)
+    if not key:
+        raise HTTPException(400, "ElevenLabs is not configured")
+    dest = get_settings().render_root / f"voice-{video.id}.wav"
+    restyle_clip(Path(video.file_path), dest, api_key=key, voice_id=voice_id or None)
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return {"ok": True, "path": str(dest)}
+    return RedirectResponse("/videos?voice=restyled", status_code=303)
 
 
 @app.get("/media/{video_id}")

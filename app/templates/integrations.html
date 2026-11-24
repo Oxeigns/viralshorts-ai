@@ -1,32 +1,53 @@
 {% extends "base.html" %}
 {% block content %}
-<header><h1>Integrations</h1></header>
+<header>
+  <h1>Integrations</h1>
+</header>
+
 <section class="grid">
-  <article>
-    <small>YouTube</small>
-    <strong>{% if providers.youtube %}Connected{% elif youtube_ready %}Ready to connect{% else %}Not configured{% endif %}</strong>
-    <p>{% if channel %}{{ channel.title }} ({{ channel.youtube_channel_id }}){% else %}Connect with official Google OAuth. Never enter a Google password here.{% endif %}</p>
-    {% if youtube_ready %}
-    <a class="button" href="/api/integrations/youtube/start">Connect YouTube</a>
-    {% else %}
-    <p class="hint">Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and the authorized redirect URI.</p>
-    {% endif %}
-  </article>
-  <article>
-    <small>Media providers</small>
-    <p>Pexels: {{ 'configured' if providers.pexels else 'optional / unused' }}</p>
-    <p>Pixabay: {{ 'configured' if providers.pixabay else 'optional / unused' }}</p>
-  </article>
-  <article>
-    <small>AI engine</small>
-    <p>Local script writer: always on</p>
-    <p>Ollama: {{ 'configured' if providers.ollama else 'optional / unused' }}</p>
-    <p>OpenAI-compatible: {{ 'configured' if providers.openai else 'optional / unused' }}</p>
-  </article>
-  <article>
-    <small>Notifications / storage</small>
-    <p>Telegram: {{ 'configured' if providers.telegram else 'optional / unused' }}</p>
-    <p>Object storage: set OBJECT_STORAGE_URL for production. Render disks are ephemeral.</p>
-  </article>
+  <article><small>ElevenLabs</small><strong>{{ "on" if elevenlabs.configured else "off" }}</strong><small>{{ elevenlabs.hint or "not set" }} · {{ elevenlabs.source }}</small></article>
+  <article><small>YouTube OAuth</small><strong>{{ "ready" if youtube_ready else "setup" }}</strong><small>{{ "connected · " + channel.title if channel and channel.connected else "save Google keys, then connect" }}</small></article>
+  <article><small>Redirect URI</small><strong class="tiny">copy into Google Cloud</strong><small>{{ redirect_uri }}</small></article>
 </section>
+
+<div class="card wide">
+  <h2>ElevenLabs voice</h2>
+  {% if request.query_params.get('voice') == 'saved' %}<p class="hint">Encrypted key saved. Dashboard and reports show only {{ elevenlabs.hint }}.</p>{% endif %}
+  {% if request.query_params.get('voice_error') %}<p class="error">ElevenLabs rejected that key. Nothing was stored.</p>{% endif %}
+  {% if request.query_params.get('google') == 'saved' %}<p class="hint">Google keys saved encrypted. Connect YouTube next.</p>{% endif %}
+  <p class="hint">The API key is stored Fernet-encrypted with <code>APP_SECRET_KEY</code>. Reports and this page only show the last 4 characters. The running app decrypts it at generate time.</p>
+  <form method="post" action="/api/integrations/elevenlabs">
+    <label>API key <input type="password" name="api_key" autocomplete="off" placeholder="{{ 'saved ' + elevenlabs.hint if elevenlabs.configured else 'sk_…' }}"></label>
+    <label>Voice ID <input name="voice_id" value="{{ voice_id }}" placeholder="21m00Tcm4TlvDq8ikWAM"></label>
+    <button type="submit">Save encrypted key</button>
+  </form>
+</div>
+
+<div class="card wide">
+  <h2>YouTube — one-click after Google Cloud</h2>
+  <ol class="hint">
+    <li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer">YouTube Data API v3</a> and enable it.</li>
+    <li>Create an OAuth <b>Web client</b>. Add this exact redirect URI: <code>{{ redirect_uri }}</code></li>
+    <li>Paste Client ID + Client Secret below. They are encrypted the same way as ElevenLabs.</li>
+    <li>Click Connect YouTube and approve the channel you want to publish to.</li>
+  </ol>
+  <form method="post" action="/api/integrations/google">
+    <label>Public app URL <input name="public_base_url" value="{{ redirect_uri.rsplit('/api/', 1)[0] }}" placeholder="https://your-app.onrender.com"></label>
+    <label>Google Client ID <input name="client_id" autocomplete="off" placeholder="{{ google_id.hint or '….apps.googleusercontent.com' }}"></label>
+    <label>Google Client Secret <input type="password" name="client_secret" autocomplete="off" placeholder="{{ 'saved ' + google_secret.hint if google_secret.configured else 'GOCSPX-…' }}"></label>
+    <button type="submit">Save Google keys</button>
+  </form>
+  {% if youtube_ready %}
+  <p><a class="button" href="/api/integrations/youtube/start">Connect YouTube</a></p>
+  <p class="hint">No Google password is stored here. After deploy, set <code>APP_BASE_URL</code> to the Render URL, paste the shown redirect URI into Google Cloud, then this button is the only remaining click.</p>
+  {% else %}
+  <p class="hint">Save both Google keys to unlock Connect YouTube.</p>
+  {% endif %}
+</div>
+
+<div class="card wide">
+  <h2>Other optional keys</h2>
+  <p>Pexels {{ "on" if providers.pexels else "off" }} · Pixabay {{ "on" if providers.pixabay else "off" }} · Ollama {{ "on" if providers.ollama else "off" }} · OpenAI {{ "on" if providers.openai else "off" }} · Telegram {{ "on" if providers.telegram else "off" }}</p>
+  <p class="hint">Those stay in environment variables. Never commit them.</p>
+</div>
 {% endblock %}

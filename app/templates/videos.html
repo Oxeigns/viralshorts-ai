@@ -9,7 +9,7 @@
   </div>
 </header>
 <table>
-  <tr><th>ID</th><th>Title</th><th>Status</th><th>Quality</th><th>Notes</th><th>File</th></tr>
+  <tr><th>ID</th><th>Title</th><th>Status</th><th>Quality</th><th>Notes</th><th>File</th><th>Voice</th></tr>
   {% for v in videos %}
   <tr>
     <td>{{ v.id }}</td>
@@ -18,9 +18,18 @@
     <td>{{ v.quality_score }}</td>
     <td>{{ v.quality_notes or v.fail_reason }}</td>
     <td>{% if v.file_path %}<a href="/media/{{ v.id }}">mp4</a>{% endif %}</td>
+    <td>
+      {% if v.file_path and providers.elevenlabs %}
+      <form method="post" action="/api/voice/restyle">
+        <input type="hidden" name="video_id" value="{{ v.id }}">
+        <input name="voice_id" value="{{ voice_id }}" placeholder="voice id">
+        <button type="submit">Restyle voice</button>
+      </form>
+      {% endif %}
+    </td>
   </tr>
   {% else %}
-  <tr><td colspan="6">Nothing in this state yet.</td></tr>
+  <tr><td colspan="7">Nothing in this state yet.</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

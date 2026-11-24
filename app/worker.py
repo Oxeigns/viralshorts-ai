@@ -8,6 +8,7 @@ import time
 
 from app.db import SessionLocal, init_db
 from app.services.publisher import tick
+from app.services.secrets import bootstrap_env_secrets
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("viralshorts.worker")
@@ -15,6 +16,8 @@ logger = logging.getLogger("viralshorts.worker")
 
 async def loop() -> None:
     await init_db()
+    async with SessionLocal() as session:
+        await bootstrap_env_secrets(session)
     while True:
         try:
             async with SessionLocal() as session:

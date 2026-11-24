@@ -98,12 +98,14 @@ def render_short(
     body: str,
     language: str = "en",
     attribution: str = "Original graphics / VIRALSHORTS AI",
+    api_key: str | None = None,
+    voice_id: str | None = None,
 ) -> dict:
     settings = get_settings()
     work = settings.render_root / f"job-{video_id}"
     work.mkdir(parents=True, exist_ok=True)
     full = f"{hook} {body}".strip()
-    audio = synthesize(full, work / "voice.wav", language=language)
+    audio = synthesize(full, work / "voice.wav", language=language, api_key=api_key, voice_id=voice_id)
     duration = estimate_duration(full)
     chunks = _chunk_words(full, 6)
     frames_dir = work / "frames"

@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import Channel, GeneratedVideo, OAuthCredential, PublishQueue, UploadHistory
-from app.security import decrypt_secret, encrypt_secret, random_state
+from app.security import decrypt_secret, encrypt_secret
 from app.services.notify import notify
+from app.services.secrets import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PUBLIC_BASE_URL, get_secret
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,37 @@ def youtube_configured() -> bool:
     return bool(settings.google_client_id and settings.google_client_secret)
 
 
-def authorization_url(state: str) -> str:
+def callback_uri(base_url: str | None = None) -> str:
+    settings = get_settings()
+    origin = (base_url or settings.app_base_url).rstrip("/")
+    configured = (settings.google_redirect_uri or "").strip()
+    if configured and not configured.endswith("/api/integrations/youtube/callback"):
+        return configured
+    if configured.startswith("http://127.0.0.1") and origin and "127.0.0.1" not in origin:
+        return f"{origin}/api/integrations/youtube/callback"
+    if configured:
+        return configured
+    return f"{origin}/api/integrations/youtube/callback"
+
+
+async def youtube_ready(session: AsyncSession) -> bool:
+    creds = await oauth_settings(session)
+    return bool(creds["client_id"] and creds["client_secret"])
+
+
+async def oauth_settings(session: AsyncSession) -> dict[str, str]:
+    return {
+        "client_id": await get_secret(session, GOOGLE_CLIENT_ID),
+        "client_secret": await get_secret(session, GOOGLE_CLIENT_SECRET),
+        "redirect_uri": callback_uri(await get_secret(session, PUBLIC_BASE_URL)),
+    }
+
+
+def authorization_url(state: str, client_id: str | None = None, redirect_uri: str | None = None) -> str:
     settings = get_settings()
     params = {
-        "client_id": settings.google_client_id,
-        "redirect_uri": settings.google_redirect_uri,
+        "client_id": client_id or settings.google_client_id,
+        "redirect_uri": redirect_uri or callback_uri(),
         "response_type": "code",
         "scope": " ".join(settings.youtube_scope_list),
         "access_type": "offline",
@@ -43,16 +70,23 @@ def authorization_url(state: str) -> str:
     return AUTH_URL + "?" + urlencode(params)
 
 
-async def exchange_code(code: str) -> dict[str, Any]:
-    settings = get_settings()
+async def exchange_code(code: str, session: AsyncSession | None = None) -> dict[str, Any]:
+    if session is not None:
+        creds = await oauth_settings(session)
+    else:
+        creds = {
+            "client_id": get_settings().google_client_id,
+            "client_secret": get_settings().google_client_secret,
+            "redirect_uri": callback_uri(),
+        }
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.post(
             TOKEN_URL,
             data={
                 "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
-                "redirect_uri": settings.google_redirect_uri,
+                "client_id": creds["client_id"],
+                "client_secret": creds["client_secret"],
+                "redirect_uri": creds["redirect_uri"],
                 "grant_type": "authorization_code",
             },
         )
@@ -60,14 +94,20 @@ async def exchange_code(code: str) -> dict[str, Any]:
     return resp.json()
 
 
-async def refresh_access_token(refresh_token: str) -> dict[str, Any]:
-    settings = get_settings()
+async def refresh_access_token(refresh_token: str, session: AsyncSession | None = None) -> dict[str, Any]:
+    if session is not None:
+        creds = await oauth_settings(session)
+    else:
+        creds = {
+            "client_id": get_settings().google_client_id,
+            "client_secret": get_settings().google_client_secret,
+        }
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.post(
             TOKEN_URL,
             data={
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_id": creds["client_id"],
+                "client_secret": creds["client_secret"],
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token",
             },
@@ -128,7 +168,7 @@ async def upload_video(session: AsyncSession, video: GeneratedVideo) -> UploadHi
     if already:
         return already
     cred = await session.scalar(select(OAuthCredential))
-    if cred is None or not youtube_configured():
+    if cred is None or not await youtube_ready(session):
         raise RuntimeError("YouTube OAuth is not connected")
     if not video.file_path or not Path(video.file_path).exists():
         raise RuntimeError("video file missing")
@@ -136,7 +176,7 @@ async def upload_video(session: AsyncSession, video: GeneratedVideo) -> UploadHi
     refresh = decrypt_secret(cred.encrypted_refresh_token) if cred.encrypted_refresh_token else ""
     access = decrypt_secret(cred.encrypted_access_token) if cred.encrypted_access_token else ""
     if cred.token_expiry and cred.token_expiry < datetime.now(timezone.utc) and refresh:
-        fresh = await refresh_access_token(refresh)
+        fresh = await refresh_access_token(refresh, session)
         access = fresh.get("access_token", access)
         cred.encrypted_access_token = encrypt_secret(access)
         cred.token_expiry = datetime.now(timezone.utc) + timedelta(seconds=int(fresh.get("expires_in") or 3500))

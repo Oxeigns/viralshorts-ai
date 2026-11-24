@@ -75,3 +75,12 @@ def random_state() -> str:
 
 def generate_secret_key() -> str:
     return os.urandom(32).hex()
+
+
+def secret_hint(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if len(value) <= 4:
+        return "****"
+    return f"…{value[-4:]}"

@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
 
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
+    elevenlabs_sts_model_id: str = "eleven_multilingual_sts_v2"
+
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://127.0.0.1:8000/api/integrations/youtube/callback"
@@ -56,6 +61,14 @@ class Settings(BaseSettings):
     @property
     def youtube_scope_list(self) -> list[str]:
         return [s for s in self.youtube_scopes.split() if s]
+
+    def normalized_database_url(self) -> str:
+        url = self.database_url
+        if url.startswith("postgres://"):
+            url = "postgresql+asyncpg://" + url[len("postgres://"):]
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+        return url
 
     def ensure_dirs(self) -> None:
         self.media_root.mkdir(parents=True, exist_ok=True)

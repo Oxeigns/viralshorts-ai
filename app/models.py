@@ -194,3 +194,13 @@ class AppLog(Base):
     level: Mapped[str] = mapped_column(String(16), default="info")
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EncryptedSecret(Base):
+    __tablename__ = "encrypted_secrets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    ciphertext: Mapped[str] = mapped_column(Text, default="")
+    hint: Mapped[str] = mapped_column(String(16), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
