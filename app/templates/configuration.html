@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>App Configuration Center</h1>
+  <p class="hint">Secrets are stored as Fernet ciphertext. Empty secret fields keep the existing key. app.json is a schema, not a Render Blueprint.</p>
+</header>
+{% if saved %}<div class="ok">Configuration saved. Secrets were re-encrypted.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<p>Configured {{ snapshot.counts.configured }} · required missing {{ snapshot.counts.missing }} · YouTube {{ 'ready' if snapshot.youtube_ready else 'not connected' }}</p>
+<form method="post" action="/configuration" class="stack">
+{% for group in snapshot.groups %}
+<section class="card">
+  <h2>{{ group.title }}</h2>
+  <p class="hint">{{ group.help }}</p>
+  {% for field in group.fields %}
+  <label>
+    {{ field.label }}
+    {% if field.required %}<strong class="tiny">required</strong>{% endif %}
+    <span class="hint">{{ field.status }}{% if field.hint %} · {{ field.hint }}{% endif %}</span>
+    {% if field.readonly %}
+    <input value="{{ field.value or field.hint or field.placeholder }}" disabled>
+    {% elif field.secret %}
+    <input type="password" name="{{ field.key }}" placeholder="{{ field.placeholder }} · leave blank to keep" autocomplete="off">
+    {% else %}
+    <input name="{{ field.key }}" value="{{ field.value }}" placeholder="{{ field.placeholder }}">
+    {% endif %}
+    <small>{{ field.obtain }}</small>
+  </label>
+  {% endfor %}
+</section>
+{% endfor %}
+<div class="row">
+  <button type="submit">Save Encrypted Configuration</button>
+  <a class="button" href="/api/config/validate">Validate Configuration</a>
+  <a class="button" href="/predeploy">Run Pre-Deployment Checker</a>
+</div>
+</form>
+<p class="hint">YouTube redirect URI: <code>{{ snapshot.redirect_uri }}</code></p>
+{% endblock %}

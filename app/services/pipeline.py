@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models import ContentIdea, GeneratedVideo, Job, MediaAsset, PublishQueue, Script, utcnow
+from app.models import ContentIdea, GeneratedVideo, Job, PublishQueue, Script, utcnow
 from app.services.ai_providers import draft_script
 from app.services.discovery import discover_ideas, generated_asset_id, license_record
 from app.services.notify import notify
 from app.services.quality import evaluate
 from app.services.renderer import render_short
-from app.services.scheduler import next_open_slot
-from app.services.secrets import ELEVENLABS, ELEVENLABS_VOICE, get_secret
+from app.services.scheduler import get_or_create_settings, next_open_slot
+from app.services.secrets import ELEVENLABS, ELEVENLABS_VOICE, HACKERAI, get_secret
+from app.services.storage import upload_file
 
 
 async def run_generation(session: AsyncSession, language: str | None = None) -> GeneratedVideo:
@@ -30,7 +29,8 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
     if idea is None:
         raise RuntimeError("no content ideas available")
 
-    draft = await draft_script(idea.title, idea.category, language)
+    hacker_key = await get_secret(session, HACKERAI)
+    draft = await draft_script(idea.title, idea.category, language, hackerai_key=hacker_key)
     script = Script(
         idea_id=idea.id,
         language=language,
@@ -66,6 +66,7 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
         hashtags=" ".join(draft.hashtags),
         keywords=", ".join(draft.keywords),
         pinned_comment=draft.pinned_comment,
+        category=idea.category,
     )
     session.add(video)
     await session.commit()
@@ -83,16 +84,22 @@ async def run_generation(session: AsyncSession, language: str | None = None) -> 
             voice_id=voice_id,
         )
         quality = evaluate(rendered["path"], rendered["duration"], True, draft.full_text, draft.hook)
-        video.file_path = rendered["path"]
+        stored = await upload_file(session, rendered["path"])
+        video.file_path = stored
         video.duration_sec = rendered["duration"]
         video.width = rendered["width"]
         video.height = rendered["height"]
         video.quality_score = quality["score"]
         video.quality_notes = quality["notes"]
+        video.voice_used = voice_id or settings.default_voice
+        sched = await get_or_create_settings(session)
         if quality["passed"]:
-            video.status = "generated"
-            slot = await next_open_slot(session)
-            session.add(PublishQueue(video_id=video.id, scheduled_for=slot, status="scheduled"))
+            if sched.publishing_mode != "automatic":
+                video.status = "pending_approval"
+            else:
+                video.status = "generated"
+                slot = await next_open_slot(session)
+                session.add(PublishQueue(video_id=video.id, scheduled_for=slot, status="scheduled"))
         else:
             video.status = "failed"
             video.fail_reason = quality["notes"]

@@ -35,8 +35,8 @@ def test_health_and_generate_flow():
         async with SessionLocal() as session:
             video = await run_generation(session)
             assert video.id
-            assert video.status in {"generated", "failed"}
-            if video.status == "generated":
+            assert video.status in {"generated", "pending_approval", "failed"}
+            if video.status in {"generated", "pending_approval"}:
                 assert Path(video.file_path).exists()
                 assert video.quality_score >= 70
 

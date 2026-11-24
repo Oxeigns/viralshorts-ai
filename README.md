@@ -1,48 +1,81 @@
 # VIRALSHORTS AI
 
-Autonomous, free-first YouTube Shorts production system.
+Autonomous YouTube Shorts factory: research → script → original 9:16 graphics → voice → FFmpeg render → quality gate → IST publish slots → official YouTube Data API upload. Remote control is a Telegram bot. Secrets are Fernet-encrypted.
 
-It discovers public topics from official RSS feeds and original seed ideas, writes a short script locally (Ollama / OpenAI optional), generates original 1080×1920 graphics, narrates with ElevenLabs when configured (otherwise eSpeak NG), renders H.264/AAC with FFmpeg, scores the result, queues three daily IST slots, and uploads only through the official YouTube Data API after Google OAuth.
-
-This is a real FastAPI application with a dark dashboard, SQLite/Postgres, a scheduler, and a Docker/Render layout. It is **not** a promise of unlimited free hosting, YPP approval, or copyright immunity.
+This is a real FastAPI app with a dashboard, SQLite/Postgres, APScheduler plus optional Celery/Redis, Alembic, Docker, and a Render Blueprint. It is **not** a promise of unlimited free hosting, YPP approval, or copyright immunity.
 
 ## What is free vs paid
 
 | Piece | Default | Notes |
 |---|---|---|
 | App, dashboard, scheduler | Free / open source | FastAPI, SQLAlchemy, APScheduler |
-| Script writer | Free local templates | Optional Ollama or OpenAI-compatible API |
-| Voice | Free eSpeak NG | ElevenLabs if `ELEVENLABS_API_KEY` is set (encrypted at rest). Falls back to eSpeak, then a tone |
-| Video render | Free FFmpeg + Pillow | Needs CPU time |
+| Script writer | Local templates | Hacker AI first if `HACKERAI_API_KEY` is set, then Ollama / OpenAI |
+| Voice | eSpeak NG | ElevenLabs if configured (encrypted). Unpaid invoice → eSpeak |
+| Video render | FFmpeg + Pillow | Needs CPU |
 | Media | Original generated graphics | Optional official Pexels / Pixabay keys |
-| Database | SQLite locally | Render Postgres is a paid/free-tier service with limits |
-| Queue | In-process scheduler | Redis is optional and unused unless you add a broker |
-| YouTube | Official OAuth + Data API | Requires your Google Cloud project and quota |
-| Hosting | You provide it | Render free web services sleep; video render needs a persistent disk or object storage |
+| Database | SQLite locally | Render Postgres is a billed/free-tier service |
+| Queue | In-process APScheduler | Redis + Celery are optional (`REDIS_URL`) |
+| YouTube | Official OAuth + Data API | Your Google Cloud project and quota |
+| Hosting | You provide it | Render free web services sleep; attach a disk or object storage |
 
-Do not put production videos on ephemeral Render disk without a disk or object store.
+Do not put production videos on ephemeral Render disk.
 
 ## Architecture
 
 ```
 app/
-  main.py                 FastAPI + dashboard
-  models.py               SQLAlchemy models
+  main.py                 FastAPI + dashboard + webhook
+  config_schema.py        Configuration Center field catalog
+  celery_app.py           Optional Celery worker tasks
   services/
-    discovery.py          RSS + seed ideas + license records
-    ai_providers.py       Local / Ollama / OpenAI scripts
-    tts.py                ElevenLabs TTS + speech-to-speech, eSpeak fallback
-    secrets.py            Fernet-encrypted API keys (hint only in UI/reports)
-    renderer.py           9:16 FFmpeg shorts
-    quality.py            Automated checks
-    youtube.py            OAuth + resumable upload
-    scheduler.py          Asia/Kolkata slots
+    config_store.py       Encrypted settings + public snapshot
+    predeploy.py          Weighted readiness score + JSON report
+    telegram_control.py   Admin-only remote control
+    ai_providers.py       Hacker AI → Ollama → OpenAI → local
+    tts.py                ElevenLabs + eSpeak fallback
+    secrets.py            Fernet vault (hint only in UI)
+    storage.py            Optional S3/R2 upload
+    renderer.py           1080×1920 H.264/AAC
     publisher.py          Generate-ahead + publish tick
-    notify.py             Optional Telegram
+    youtube.py            OAuth + resumable upload
   worker.py               Render worker loop
+alembic/                  Schema migrations
+app.json                  Config schema (NOT a Render Blueprint)
+render.yaml               Render Blueprint
 ```
 
-Default publish times: **09:00, 14:00, 20:00 IST**. Daily target is 3 and can be changed in Automation.
+Default publish times: **09:00, 14:00, 20:00 IST**. Daily target is 3. Modes: `automatic`, `approval` (default), `manual`.
+
+## App Configuration Center
+
+After login open **Config** (`/configuration`).
+
+- Seven groups: AI, Voice, Telegram, YouTube, Publishing, Storage, Deploy
+- Each field explains what it is and where to get the value
+- Secrets stay blank in the browser; only a last-4 hint is shown
+- Actions: **Save Encrypted Configuration**, **Validate Configuration**, **Run Pre-Deployment Checker**
+- `app.json` is the same schema with empty secret placeholders. Deploy with `render.yaml`, not by treating `app.json` as a Blueprint.
+
+## Pre-deployment checker
+
+`/predeploy` and `GET /api/predeploy` (login required) run live checks:
+
+- Hacker AI `GET {base}/models`
+- ElevenLabs `/v1/user` (billing issues are warnings, not fake passes)
+- Telegram `getMe` + admin allowlist
+- Google OAuth + connected channel
+- Publish slots / mode
+- Database, Redis reachability, object storage
+- ffmpeg, eSpeak, `APP_SECRET_KEY`, public URL
+- Required project files and importable Python deps
+
+Score weights: YouTube 25, Telegram 15, AI 15, Deploy 15, Voice/Publishing/Storage 10. **READY** only when required groups pass. A JSON copy is written to `data/predeploy-report.json` (gitignored).
+
+## Telegram remote control
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_IDS` (comma-separated numeric user ids). After deploy, POST `/api/telegram/webhook/setup`.
+
+Menu / commands: Status, Config, Generate, Queue, Approve, Analytics, Pause, Resume, Pre-Deploy, Test. Unauthorized users are rejected. Keys are never echoed.
 
 ## Local run
 
@@ -53,13 +86,25 @@ pip install -r requirements.txt
 sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core   # Debian/Ubuntu
 cp .env.example .env
 # edit ADMIN_PASSWORD and APP_SECRET_KEY
-# optionally set ELEVENLABS_API_KEY (never commit .env)
+# optionally set ELEVENLABS_API_KEY and HACKERAI_API_KEY (never commit .env)
 uvicorn app.main:app --reload --port 8000
 ```
 
 Open http://127.0.0.1:8000 and sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 
-Generate a Short from Overview. The file is stored under `data/renders/` and listed in Videos.
+Optional Celery (needs Redis):
+
+```bash
+celery -A app.celery_app:celery worker --loglevel=info
+```
+
+Schema migrations (Postgres or a clean SQLite file):
+
+```bash
+alembic upgrade head
+```
+
+Local SQLite also creates tables via `init_db()` on boot.
 
 ## Tests
 
@@ -68,64 +113,58 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Tests compile the app, score scripts, compute IST slots, hit `/health`, and render a real MP4 with FFmpeg.
+A GitHub Actions workflow is in `docs/github-actions-ci.yml`. Copy it to `.github/workflows/ci.yml` after granting the `workflow` scope (this account's Actions are currently billing-locked).
 
-A GitHub Actions workflow is in `docs/github-actions-ci.yml`. Copy it to `.github/workflows/ci.yml` after granting the `workflow` scope (this account's Actions are also currently billing-locked).
+`scripts/deploy.sh` compiles the app, runs pytest, and prints the manual Render path. It does **not** mean Render is live.
+
+## Hacker AI
+
+Official docs: https://hackerai.sh/how-to-use-api
+
+- Base URL: `https://api.hackerai.sh/v1`
+- Auth: `Authorization: Bearer sk-…`
+- Recommended model: `auto`
+- Used for scripts, titles, descriptions, hashtags. Falls back to local templates if the key is missing or the call fails.
 
 ## ElevenLabs (encrypted)
 
-Do **not** commit the API key. On deploy, set `ELEVENLABS_API_KEY` as a Render environment variable (or a GitHub Actions secret). At boot the app encrypts it with Fernet keyed from `APP_SECRET_KEY` and stores only ciphertext. Status APIs and the dashboard show `…last4` only.
+Do **not** commit the API key. Set `ELEVENLABS_API_KEY` as a Render env var or paste it in Configuration Center. At boot the app encrypts it with Fernet keyed from `APP_SECRET_KEY`. Status APIs show `…last4` only.
 
-Used for:
+If the key is valid but ElevenLabs returns `payment_required` / `payment_issue`, TTS falls back to eSpeak NG until the invoice is paid.
 
-- narration on every generated Short
-- `/api/voice/restyle` speech-to-speech on an existing clip
+## Google OAuth / YouTube
 
-If the key is missing or ElevenLabs errors, eSpeak NG is used.
+1. Deploy so you have a public URL (`APP_BASE_URL`).
+2. Enable [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com).
+3. Create an OAuth **Web client**. Redirect = `{APP_BASE_URL}/api/integrations/youtube/callback`.
+4. Paste Client ID + Secret on **Integrations** or Config, then **Connect YouTube**.
+5. Confirm the channel can accept API uploads.
 
-You can also paste the key on **Integrations** after login. That path encrypts immediately and never writes plaintext to git.
-
-## Google OAuth / YouTube (easy path after deploy)
-
-1. Deploy the app so you have a public URL (`APP_BASE_URL`).
-2. Open [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) and enable it.
-3. Create an OAuth **Web client**. Authorized redirect = `{APP_BASE_URL}/api/integrations/youtube/callback` (the Integrations page shows the exact URI).
-4. In the dashboard open **Integrations**, paste Client ID + Client Secret (they are encrypted the same way as ElevenLabs), then click **Connect YouTube** and approve your channel.
-5. Confirm the channel is eligible for API uploads. New projects are often in restricted/unverified mode.
-
-You can also set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` as Render env vars. The UI never asks for a Google password. Tokens are encrypted with `APP_SECRET_KEY`.
+Tokens are encrypted. The UI never asks for a Google password.
 
 ## Render
 
 `render.yaml` defines:
 
-- Docker web service (`/health` check)
+- Docker web service (`/health`)
 - Docker worker (`python -m app.worker`)
+- Optional Celery worker (`celery -A app.celery_app:celery worker`)
+- Redis
 - Postgres
 - Persistent disks for media/renders
 
-Free-tier web services sleep, starter disks and Postgres are not unlimited, and a small instance should **not** run large local LLMs. Use the built-in script writer on Render.
-
-Set at least:
+There is no live Render URL from this environment. After you create a Blueprint from this repo, set at least:
 
 - `ADMIN_PASSWORD`
-- `APP_SECRET_KEY` (auto-generated is fine)
-- `APP_BASE_URL`
+- `APP_BASE_URL` (the assigned `https://….onrender.com`)
 - `ELEVENLABS_API_KEY` for real voices
-- `GOOGLE_*` if you want publishing
-- `OBJECT_STORAGE_URL` if you outgrow the disk
+- `HACKERAI_API_KEY` for remote scripts
+- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ADMIN_IDS`
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 
-Blueprint create from this repo. There is no live Render URL from this environment. After you deploy, the URL is whatever Render assigns.
+Then open `/configuration` → Validate → Connect YouTube → webhook setup.
 
-Then:
-
-1. Set `APP_BASE_URL` to that URL.
-2. Copy the redirect URI from Integrations into Google Cloud.
-3. Click **Connect YouTube**.
-
-## Telegram (optional)
-
-`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` send publish / failure / pause notices. Leave blank to disable.
+Do not claim deploy is complete until Render shows the web service as live and `/health` returns `{"ok":true}`.
 
 ## What it will not do
 
@@ -135,20 +174,22 @@ Then:
 - Invent trending numbers
 - Publish unverified remote media
 - Stay online 24/7 on a sleeping free web dyno
+- Treat `app.json` as a native Render manifest
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | Login fails | `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env` |
-| Generate fails with ffmpeg | `ffmpeg -version` and install the package |
-| Voice sounds robotic | Expected with eSpeak; set encrypted ElevenLabs key on Integrations |
-| ElevenLabs 401 `payment_issue` | Key is valid but the ElevenLabs invoice is unpaid; app falls back to eSpeak until billing is current |
-| Queue never publishes | Connect YouTube; confirm the job is not paused; wait for the IST slot or POST `/api/tick` |
-| OAuth error | Redirect URI must match exactly; confirm state cookie |
+| Generate fails with ffmpeg | `ffmpeg -version` |
+| Voice sounds robotic | Expected with eSpeak; pay ElevenLabs invoice or set a working key |
+| ElevenLabs 401 `payment_issue` | Key is valid; billing is not. App falls back to eSpeak |
+| Queue never publishes | Connect YouTube; not paused; wait for IST slot or POST `/api/tick` |
+| OAuth error | Redirect URI must match exactly |
 | Render files vanish | Attach a disk or object storage |
-| Actions CI red | This GitHub account currently locks Actions on billing; tests still run locally |
+| Actions CI red | GitHub account currently locks Actions on billing |
+| Pre-deploy not 100 | Required groups failed; read blockers, do not treat warnings as passes |
 
 ## License
 
-Use at your own risk. You are responsible for licenses, YouTube policy, and any API quotas.
+Use at your own risk. You are responsible for licenses, YouTube policy, and API quotas.

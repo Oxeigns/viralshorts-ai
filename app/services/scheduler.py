@@ -22,6 +22,9 @@ async def get_or_create_settings(session: AsyncSession) -> SchedulerSettings:
         language=cfg.default_language,
         paused=cfg.automation_paused,
         quality_threshold=cfg.quality_threshold,
+        publishing_mode=cfg.publishing_mode,
+        approval_required=cfg.approval_required,
+        video_category=cfg.youtube_category_id,
     )
     session.add(row)
     await session.commit()

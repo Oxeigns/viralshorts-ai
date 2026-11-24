@@ -124,6 +124,8 @@ class GeneratedVideo(Base):
     pinned_comment: Mapped[str] = mapped_column(Text, default="")
     language: Mapped[str] = mapped_column(String(16), default="en")
     fail_reason: Mapped[str] = mapped_column(Text, default="")
+    voice_used: Mapped[str] = mapped_column(String(80), default="")
+    category: Mapped[str] = mapped_column(String(80), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -174,6 +176,9 @@ class SchedulerSettings(Base):
     language: Mapped[str] = mapped_column(String(16), default="en")
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     quality_threshold: Mapped[int] = mapped_column(Integer, default=70)
+    publishing_mode: Mapped[str] = mapped_column(String(20), default="approval")
+    approval_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    video_category: Mapped[str] = mapped_column(String(16), default="24")
 
 
 class Job(Base):
@@ -204,3 +209,22 @@ class EncryptedSecret(Base):
     ciphertext: Mapped[str] = mapped_column(Text, default="")
     hint: Mapped[str] = mapped_column(String(16), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor: Mapped[str] = mapped_column(String(80), default="system")
+    action: Mapped[str] = mapped_column(String(80))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

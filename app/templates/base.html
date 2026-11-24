@@ -7,20 +7,19 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <aside>
-    <div class="brand">VIRALSHORTS<span>AI</span></div>
-    <nav>
-      <a href="/">Overview</a>
-      <a href="/videos">Videos</a>
-      <a href="/discovery">Discovery</a>
-      <a href="/automation">Automation</a>
-      <a href="/integrations">Integrations</a>
-      <a href="/analytics">Analytics</a>
-    </nav>
-    {% if user %}
-    <form method="post" action="/logout"><button type="submit">Sign out</button></form>
-    {% endif %}
-  </aside>
+  <nav>
+    <a href="/" class="brand">VIRALSHORTS</a>
+    <a href="/">Overview</a>
+    <a href="/videos">Videos</a>
+    <a href="/discovery">Discovery</a>
+    <a href="/automation">Automation</a>
+    <a href="/configuration">Config</a>
+    <a href="/predeploy">Pre-Deploy</a>
+    <a href="/logs">Logs</a>
+    <a href="/integrations">Integrations</a>
+    <a href="/analytics">Analytics</a>
+    <form method="post" action="/logout"><button class="link">Logout</button></form>
+  </nav>
   <main>
     {% block content %}{% endblock %}
   </main>

@@ -15,6 +15,10 @@ ELEVENLABS_VOICE = "elevenlabs_voice_id"
 GOOGLE_CLIENT_ID = "google_client_id"
 GOOGLE_CLIENT_SECRET = "google_client_secret"
 PUBLIC_BASE_URL = "public_base_url"
+HACKERAI = "hackerai_api_key"
+TELEGRAM_TOKEN = "telegram_bot_token"
+STORAGE_ACCESS = "storage_access_key"
+STORAGE_SECRET = "storage_secret_key"
 
 
 def _env_fallback(name: str) -> str:
@@ -25,6 +29,11 @@ def _env_fallback(name: str) -> str:
         GOOGLE_CLIENT_ID: settings.google_client_id,
         GOOGLE_CLIENT_SECRET: settings.google_client_secret,
         PUBLIC_BASE_URL: settings.app_base_url,
+        HACKERAI: settings.hackerai_api_key or os.environ.get("HACKERAI_API_KEY", ""),
+        TELEGRAM_TOKEN: settings.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+        STORAGE_ACCESS: settings.storage_access_key,
+        STORAGE_SECRET: settings.storage_secret_key,
+        "database_url": settings.database_url,
     }
     return (mapping.get(name) or "").strip()
 
@@ -78,6 +87,8 @@ async def bootstrap_env_secrets(session: AsyncSession) -> None:
         ELEVENLABS: _env_fallback(ELEVENLABS),
         GOOGLE_CLIENT_ID: _env_fallback(GOOGLE_CLIENT_ID),
         GOOGLE_CLIENT_SECRET: _env_fallback(GOOGLE_CLIENT_SECRET),
+        HACKERAI: _env_fallback(HACKERAI),
+        TELEGRAM_TOKEN: _env_fallback(TELEGRAM_TOKEN),
     }
     for name, value in pairs.items():
         if not value:

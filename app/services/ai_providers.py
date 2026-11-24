@@ -111,13 +111,68 @@ def local_script(topic: str, category: str, language: str = "en") -> ScriptDraft
     )
 
 
-async def optional_remote_script(topic: str, category: str, language: str) -> ScriptDraft | None:
+def _parse_json_blob(text: str) -> ScriptDraft | None:
+    match = re.search(r"\{.*\}", text, re.S)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    hook = str(data.get("hook") or "").strip()
+    body = str(data.get("body") or "").strip()
+    if not hook or not body:
+        return None
+    titles = [str(t) for t in (data.get("titles") or [])][:3]
+    while len(titles) < 3:
+        titles.append(hook[:70])
+    return ScriptDraft(
+        hook=hook,
+        body=body,
+        full_text=f"{hook} {body}",
+        titles=titles,
+        description=str(data.get("description") or body),
+        hashtags=list(data.get("hashtags") or ["#shorts"]),
+        keywords=list(data.get("keywords") or []),
+        pinned_comment=str(data.get("pinned_comment") or ""),
+        provider="remote",
+    )
+
+
+async def optional_remote_script(topic: str, category: str, language: str, hackerai_key: str = "") -> ScriptDraft | None:
     settings = get_settings()
     prompt = (
         "Write a truthful 70-word YouTube Short script. No fabricated facts. "
         f"Topic: {topic}. Category: {category}. Language: {language}. "
         "Return JSON with keys hook, body, titles (3), description, hashtags, keywords, pinned_comment."
     )
+    key = (hackerai_key or settings.hackerai_api_key).strip()
+    if key:
+        try:
+            headers = {"Authorization": f"Bearer {key}"}
+            base = (settings.hackerai_api_base_url or "https://api.hackerai.sh/v1").rstrip("/")
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{base}/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": settings.hackerai_model or "auto",
+                        "messages": [
+                            {"role": "system", "content": "You write original YouTube Shorts scripts. Never invent facts."},
+                            {"role": "user", "content": prompt},
+                        ],
+                    },
+                )
+            if resp.status_code == 200:
+                text = resp.json()["choices"][0]["message"]["content"]
+                parsed = _parse_json_blob(text)
+                if parsed:
+                    parsed.provider = "hackerai"
+                    return parsed
+            else:
+                logger.info("hackerai unavailable: %s %s", resp.status_code, resp.text[:160])
+        except Exception as exc:  # noqa: BLE001
+            logger.info("hackerai unavailable: %s", exc)
     if settings.ollama_base_url:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
@@ -157,34 +212,6 @@ async def optional_remote_script(topic: str, category: str, language: str) -> Sc
     return None
 
 
-def _parse_json_blob(text: str) -> ScriptDraft | None:
-    match = re.search(r"\{.*\}", text, re.S)
-    if not match:
-        return None
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-    hook = str(data.get("hook") or "").strip()
-    body = str(data.get("body") or "").strip()
-    if not hook or not body:
-        return None
-    titles = [str(t) for t in (data.get("titles") or [])][:3]
-    while len(titles) < 3:
-        titles.append(hook[:70])
-    return ScriptDraft(
-        hook=hook,
-        body=body,
-        full_text=f"{hook} {body}",
-        titles=titles,
-        description=str(data.get("description") or body),
-        hashtags=list(data.get("hashtags") or ["#shorts"]),
-        keywords=list(data.get("keywords") or []),
-        pinned_comment=str(data.get("pinned_comment") or ""),
-        provider="remote",
-    )
-
-
-async def draft_script(topic: str, category: str, language: str = "en") -> ScriptDraft:
-    remote = await optional_remote_script(topic, category, language)
+async def draft_script(topic: str, category: str, language: str = "en", hackerai_key: str = "") -> ScriptDraft:
+    remote = await optional_remote_script(topic, category, language, hackerai_key=hackerai_key)
     return remote or local_script(topic, category, language)

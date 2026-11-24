@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Pre-Deployment Checker</h1>
+  <p class="hint">Live checks against official APIs. Score is weighted: YouTube 25, Telegram 15, AI 15, Deploy 15, Voice/Publishing/Storage 10 each.</p>
+</header>
+<div class="card">
+  <h2>Readiness {{ report.score }}/100 · {{ 'READY' if report.ready else 'NOT READY' }}</h2>
+  <p>Generated {{ report.generated_at }}</p>
+  {% if report.blockers %}
+  <h3>Blockers</h3>
+  <ul>{% for item in report.blockers %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if report.warnings %}
+  <h3>Warnings</h3>
+  <ul>{% for item in report.warnings %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+<table>
+  <tr><th>Group</th><th>Check</th><th>Status</th><th>Detail</th></tr>
+  {% for item in report.checks %}
+  <tr>
+    <td>{{ item.group }}</td>
+    <td>{{ item.name }}</td>
+    <td>{{ item.status }}</td>
+    <td>{{ item.message }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="hint">JSON copy written to data/predeploy-report.json on the server disk.</p>
+{% endblock %}

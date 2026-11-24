@@ -11,9 +11,16 @@ services:
         generateValue: true
       - key: APP_BASE_URL
         sync: false
+      - key: FRONTEND_URL
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: viralshorts-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: viralshorts-redis
           property: connectionString
       - key: ADMIN_USERNAME
         value: admin
@@ -25,10 +32,36 @@ services:
         value: "3"
       - key: PUBLISH_SLOTS
         value: "09:00,14:00,20:00"
+      - key: PUBLISH_TIME_1
+        value: "09:00"
+      - key: PUBLISH_TIME_2
+        value: "14:00"
+      - key: PUBLISH_TIME_3
+        value: "20:00"
+      - key: PUBLISHING_MODE
+        value: approval
+      - key: APPROVAL_REQUIRED
+        value: "true"
+      - key: DEFAULT_LANGUAGE
+        value: en
+      - key: YOUTUBE_CATEGORY_ID
+        value: "24"
+      - key: WORKER_ENABLED
+        value: "true"
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO
       - key: MEDIA_ROOT
         value: /var/data/media
       - key: RENDER_ROOT
         value: /var/data/renders
+      - key: HACKERAI_API_KEY
+        sync: false
+      - key: HACKERAI_API_BASE_URL
+        value: https://api.hackerai.sh/v1
+      - key: HACKERAI_MODEL
+        value: auto
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
@@ -39,6 +72,10 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: TELEGRAM_NOTIFICATIONS
+        value: "true"
       - key: PEXELS_API_KEY
         sync: false
       - key: PIXABAY_API_KEY
@@ -47,6 +84,14 @@ services:
         sync: false
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
+      - key: OBJECT_STORAGE_URL
+        sync: false
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: STORAGE_ACCESS_KEY
+        sync: false
+      - key: STORAGE_SECRET_KEY
+        sync: false
     disk:
       name: viralshorts-data
       mountPath: /var/data
@@ -69,16 +114,42 @@ services:
         fromDatabase:
           name: viralshorts-db
           property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: viralshorts-redis
+          property: connectionString
       - key: TIMEZONE
         value: Asia/Kolkata
+      - key: WORKER_ENABLED
+        value: "true"
+      - key: SCHEDULER_ENABLED
+        value: "true"
       - key: MEDIA_ROOT
         value: /var/data/media
       - key: RENDER_ROOT
         value: /var/data/renders
+      - key: HACKERAI_API_KEY
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: HACKERAI_API_KEY
+      - key: HACKERAI_API_BASE_URL
+        value: https://api.hackerai.sh/v1
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_ADMIN_IDS
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: TELEGRAM_ADMIN_IDS
       - key: ELEVENLABS_API_KEY
         fromService:
           type: web
@@ -86,10 +157,66 @@ services:
           envVarKey: ELEVENLABS_API_KEY
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
+      - key: OBJECT_STORAGE_URL
+        sync: false
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: STORAGE_ACCESS_KEY
+        sync: false
+      - key: STORAGE_SECRET_KEY
+        sync: false
     disk:
       name: viralshorts-worker-data
       mountPath: /var/data
       sizeGB: 10
+
+  - type: worker
+    name: viralshorts-celery
+    runtime: docker
+    plan: starter
+    dockerCommand: celery -A app.celery_app:celery worker --loglevel=info
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECRET_KEY
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: APP_SECRET_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralshorts-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: viralshorts-redis
+          property: connectionString
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: RENDER_ROOT
+        value: /var/data/renders
+      - key: HACKERAI_API_KEY
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: HACKERAI_API_KEY
+      - key: ELEVENLABS_API_KEY
+        fromService:
+          type: web
+          name: viralshorts-web
+          envVarKey: ELEVENLABS_API_KEY
+    disk:
+      name: viralshorts-celery-data
+      mountPath: /var/data
+      sizeGB: 10
+
+  - type: redis
+    name: viralshorts-redis
+    plan: starter
+    ipAllowList: []
 
 databases:
   - name: viralshorts-db

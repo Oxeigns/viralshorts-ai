@@ -16,6 +16,8 @@ from app.config import get_settings
 from app.db import SessionLocal, get_session, init_db
 from app.models import (
     AnalyticsSnapshot,
+    AppLog,
+    AuditLog,
     Channel,
     ContentIdea,
     GeneratedVideo,
@@ -26,8 +28,10 @@ from app.models import (
     User,
 )
 from app.security import hash_password, new_csrf, read_session, sign_session, verify_password
+from app.services.config_store import public_snapshot, save_form
 from app.services.discovery import active_categories, discover_ideas
 from app.services.pipeline import run_generation
+from app.services.predeploy import run_predeploy
 from app.services.publisher import tick
 from app.services.scheduler import get_or_create_settings
 from app.services.secrets import (
@@ -35,12 +39,15 @@ from app.services.secrets import (
     ELEVENLABS_VOICE,
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
+    HACKERAI,
     PUBLIC_BASE_URL,
+    TELEGRAM_TOKEN,
     bootstrap_env_secrets,
     get_secret,
     put_secret,
     secret_status,
 )
+from app.services.telegram_control import handle_update, set_webhook
 from app.services.tts import list_voices, probe_account, restyle_clip
 from app.services.youtube import (
     authorization_url,
@@ -64,7 +71,8 @@ async def lifespan(_: FastAPI):
         await _ensure_admin(session)
         await get_or_create_settings(session)
         await bootstrap_env_secrets(session)
-    if not scheduler.running:
+    cfg = get_settings()
+    if cfg.scheduler_enabled and not scheduler.running:
         scheduler.add_job(_scheduled_tick, "interval", minutes=10, id="pipeline-tick", replace_existing=True)
         scheduler.start()
     yield
@@ -111,15 +119,18 @@ async def _ctx(request: Request, session: AsyncSession, **extra):
     eleven = await secret_status(session, ELEVENLABS)
     google_id = await secret_status(session, GOOGLE_CLIENT_ID)
     google_secret = await secret_status(session, GOOGLE_CLIENT_SECRET)
+    hacker = await secret_status(session, HACKERAI)
+    telegram = await secret_status(session, TELEGRAM_TOKEN)
     yt_ready = await youtube_ready(session)
     providers = {
         "youtube": yt_ready and bool(channel and channel.connected),
         "elevenlabs": eleven["configured"],
+        "hackerai": hacker["configured"],
         "pexels": bool(cfg.pexels_api_key),
         "pixabay": bool(cfg.pixabay_api_key),
         "ollama": bool(cfg.ollama_base_url),
         "openai": bool(cfg.openai_api_key),
-        "telegram": bool(cfg.telegram_bot_token and cfg.telegram_chat_id),
+        "telegram": telegram["configured"],
     }
     data = {
         "request": request,
@@ -131,6 +142,8 @@ async def _ctx(request: Request, session: AsyncSession, **extra):
         "elevenlabs": eleven,
         "google_id": google_id,
         "google_secret": google_secret,
+        "hackerai": hacker,
+        "telegram": telegram,
         "redirect_uri": callback_uri(await get_secret(session, PUBLIC_BASE_URL)),
         "voice_id": await get_secret(session, ELEVENLABS_VOICE),
         "categories": active_categories(),
@@ -239,6 +252,44 @@ async def update_automation(
     return RedirectResponse("/automation", status_code=303)
 
 
+@app.get("/configuration", response_class=HTMLResponse)
+async def configuration_page(request: Request, session: SessionDep, saved: int | None = None):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    snapshot = await public_snapshot(session)
+    return templates.TemplateResponse(
+        request,
+        "configuration.html",
+        await _ctx(request, session, snapshot=snapshot, saved=bool(saved)),
+    )
+
+
+@app.post("/configuration")
+async def configuration_save(request: Request, session: SessionDep):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    form = dict(await request.form())
+    await save_form(session, {str(k): str(v) for k, v in form.items()})
+    return RedirectResponse("/configuration?saved=1", status_code=303)
+
+
+@app.get("/predeploy", response_class=HTMLResponse)
+async def predeploy_page(request: Request, session: SessionDep):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    report = await run_predeploy(session)
+    return templates.TemplateResponse(request, "predeploy.html", await _ctx(request, session, report=report))
+
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request, session: SessionDep):
+    if not _current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    logs = (await session.scalars(select(AppLog).order_by(AppLog.created_at.desc()).limit(50))).all()
+    audits = (await session.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(50))).all()
+    return templates.TemplateResponse(request, "logs.html", await _ctx(request, session, logs=logs, audits=audits))
+
+
 @app.get("/integrations", response_class=HTMLResponse)
 async def integrations(request: Request, session: SessionDep):
     if not _current_user(request):
@@ -295,7 +346,51 @@ async def api_status(session: SessionDep):
         "youtube_configured": await youtube_ready(session),
         "elevenlabs_configured": eleven["configured"],
         "elevenlabs_hint": eleven["hint"],
+        "hackerai_configured": (await secret_status(session, HACKERAI))["configured"],
+        "telegram_configured": (await secret_status(session, TELEGRAM_TOKEN))["configured"],
     }
+
+
+@app.get("/api/config")
+async def api_config(request: Request, session: SessionDep):
+    require_user(request)
+    return await public_snapshot(session)
+
+
+@app.post("/api/config")
+async def api_config_save(request: Request, session: SessionDep):
+    require_user(request)
+    payload = await request.json()
+    saved = await save_form(session, {str(k): str(v) for k, v in payload.items()})
+    return {"ok": True, "saved": saved}
+
+
+@app.get("/api/config/validate")
+async def api_config_validate(request: Request, session: SessionDep):
+    require_user(request)
+    report = await run_predeploy(session)
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse("/predeploy", status_code=303)
+    return report
+
+
+@app.get("/api/predeploy")
+async def api_predeploy(request: Request, session: SessionDep):
+    require_user(request)
+    return await run_predeploy(session)
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request, session: SessionDep):
+    payload = await request.json()
+    return await handle_update(session, payload)
+
+
+@app.post("/api/telegram/webhook/setup")
+async def telegram_webhook_setup(request: Request, session: SessionDep):
+    require_user(request)
+    cfg = get_settings()
+    return await set_webhook(session, cfg.app_base_url)
 
 
 @app.get("/api/integrations/youtube/start")
@@ -378,6 +473,20 @@ async def voice_restyle(request: Request, session: SessionDep, video_id: int = F
     if "application/json" in accept:
         return {"ok": True, "path": str(dest)}
     return RedirectResponse("/videos?voice=restyled", status_code=303)
+
+
+@app.post("/api/videos/{video_id}/approve")
+async def approve_video(video_id: int, request: Request, session: SessionDep):
+    require_user(request)
+    from app.services.scheduler import next_open_slot
+
+    video = await session.get(GeneratedVideo, video_id)
+    if video is None:
+        raise HTTPException(404, "video not found")
+    video.status = "generated"
+    session.add(PublishQueue(video_id=video.id, scheduled_for=await next_open_slot(session), status="scheduled"))
+    await session.commit()
+    return {"ok": True, "id": video.id, "status": video.status}
 
 
 @app.get("/media/{video_id}")

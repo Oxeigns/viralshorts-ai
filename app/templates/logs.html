@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <h1>Logs</h1>
+</header>
+<table>
+  <tr><th>When</th><th>Level</th><th>Message</th></tr>
+  {% for row in logs %}
+  <tr>
+    <td>{{ row.created_at }}</td>
+    <td>{{ row.level }}</td>
+    <td>{{ row.message }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3">No application logs stored yet.</td></tr>
+  {% endfor %}
+</table>
+<h2>Audit</h2>
+<table>
+  <tr><th>When</th><th>Actor</th><th>Action</th><th>Detail</th></tr>
+  {% for row in audits %}
+  <tr>
+    <td>{{ row.created_at }}</td>
+    <td>{{ row.actor }}</td>
+    <td>{{ row.action }}</td>
+    <td>{{ row.detail }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4">No Telegram or dashboard audit events yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

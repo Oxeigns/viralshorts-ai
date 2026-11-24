@@ -1,0 +1,10 @@
+{
+  "name": "viralshorts-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend asset helpers for VIRALSHORTS AI. The production app is FastAPI.",
+  "scripts": {
+    "lint:css": "node -e \"require('fs').accessSync('app/static/app.css')\"",
+    "test": "echo \"Python tests: pytest\""
+  }
+}

@@ -23,6 +23,7 @@ data/renders/
 data/tmp/
 data/*.db
 data/*.sqlite*
+data/predeploy-report.json
 storage/
 logs/
 *.log

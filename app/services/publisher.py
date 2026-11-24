@@ -9,7 +9,7 @@ from app.models import GeneratedVideo, Job, PublishQueue, utcnow
 from app.services.notify import notify
 from app.services.pipeline import run_generation
 from app.services.scheduler import get_or_create_settings
-from app.services.youtube import upload_video, youtube_configured
+from app.services.youtube import upload_video, youtube_ready
 
 
 async def tick(session: AsyncSession) -> dict:
@@ -44,7 +44,7 @@ async def tick(session: AsyncSession) -> dict:
             item.status = "blocked"
             item.last_error = "quality threshold"
             continue
-        if not youtube_configured():
+        if not await youtube_ready(session):
             item.last_error = "youtube oauth not configured"
             item.attempts += 1
             continue
