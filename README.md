@@ -4,6 +4,10 @@ Autonomous YouTube Shorts factory: research → script → original 9:16 graphic
 
 This is a real FastAPI app with a dashboard, SQLite/Postgres, APScheduler plus optional Celery/Redis, Alembic, Docker, and a Render Blueprint. It is **not** a promise of unlimited free hosting, YPP approval, or copyright immunity.
 
+## Agent skill
+
+`SKILL.md` is the agent-facing runbook for this repository: install the app, configure each integration, generate and approve one Short, connect YouTube and Telegram, and enable scheduled uploads.
+
 ## What is free vs paid
 
 | Piece | Default | Notes |

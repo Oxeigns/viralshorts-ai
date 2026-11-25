@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.config_schema import GROUPS, placeholder_app_json
 from app.db import SessionLocal, init_db
-from app.main import app
+from app.main import _ensure_admin, app
 from app.models import EncryptedSecret
 from app.services.config_store import public_snapshot, save_form
 from app.services.predeploy import run_predeploy
@@ -123,6 +123,8 @@ def test_telegram_inline_menu_and_commands():
 def test_generate_returns_immediately():
     async def run():
         await init_db()
+        async with SessionLocal() as session:
+            await _ensure_admin(session)
         transport = ASGITransport(app=app)
         from app.config import get_settings
 

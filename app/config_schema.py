@@ -319,7 +319,7 @@ GROUPS: list[dict[str, Any]] = [
                 "label": "PostgreSQL Database URL",
                 "secret": True,
                 "required": False,
-                "placeholder": "postgresql://user:pass@host:5432/viralshorts",
+                "placeholder": "postgresql://localhost:5432/viralshorts",
                 "env": "DATABASE_URL",
                 "obtain": "Render Postgres connection string, or local sqlite+aiosqlite:///./data/viralshorts.db",
             },
